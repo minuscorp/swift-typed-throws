@@ -135,6 +135,26 @@ func foo<T>(_ block: () throws T -> Void) rethrows T
 ```
 In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one.
 
+### Consistency with other APIs:
+
+With `Result` you could always:
+
+```swift
+func getCatResult() -> Result<Cat, CatError>
+
+// but never
+
+func getCatResult() throws -> Cat
+```
+
+One has the safety of unwrapping the correct `Error` type but the other one doesn't, so with this proposal:
+
+```swift
+func getCatResult() throws CatResult -> Cat
+```
+
+Would be totally valid. So you can put face to face `Result` and `throws` and perform the same operations with different semantics (and the semantics depend on the developer needs) in a free way, and not being obliged to choose one solution over the other one just because it cannot reach the same goal with it.
+
 # Source compatibility
 This change is purely additive and should not affect source compatibility.
 
