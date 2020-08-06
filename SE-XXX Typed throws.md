@@ -60,7 +60,47 @@ Scenarios where you get type safety:
 ```swift
 public func foo() throws MyError {
     throw OtherError.baz // error: OtherError cannot be casted to MyError.
+}
+
 public func foo() throws MyError {
+  do {
+    try typedThrow() // Throws OtherError inside a do statement there're no restrictions about the throwing type.
+  } catch {
+    throw MyError.baz 
+  }
+}
+
+public func foo() throws MyError {
+  do {
+    try typedThrow1() // Throws OtherError
+    try typedThrow2() // Throws AnotherError
+  } catch { // compiler cannot ensure which of the two errors are being emmited so it warns: Cannot infer throwing type from mixed type throwing methods.
+    dump(error) // Is casted to `Error`
+  }
+}
+```
+
+Which can be autocorrected in:
+
+```swift
+do {
+   try typedThrow1() // Throws OtherError
+   try typedThrow2() // Throws AnotherError
+} catch let error as OtherError { // The warning generates the missing catch clauses for the typed throws existant in the do block.
+   dump(error)
+} catch let error as AnotherError {
+   dump(error)
+}
+
+```
+
+And avoid mistyped catching clauses:
+
+```swift
+do {
+   try typedThrow() // Throws MyError
+} catch let error as NSError { // error: NSError cannot be casted to MyError
+   fatalError() 
 }
 ```
 
