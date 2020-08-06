@@ -29,7 +29,6 @@ do {
 } catch { // No idea of what might be going on here
     fatalError()
     // or just let it go ahead with the error or stop the execution for `error` reason.
-    fatalError()
 }
 ```
 
