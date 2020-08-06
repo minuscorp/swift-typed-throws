@@ -13,6 +13,88 @@ Swift Error handling system seems lacking of the other features that the Swift l
 
 # Motivation
 
+Many Swift APIs provide methods marked as `throws`, this, however, provides little to no information to the consumer unless the provider adds documentation about it, which means nothing to the compiler neither the safety of the code being produced, for example:
+
+```swift
+import ExternalLibrary
+
+do {
+    let newNumberOfFiles = try ExternalUtility.incrementNumberOfFilesOnDirectory(at: path)
+} catch let error as NSError { // Maybe throws an NSError because it uses `FileManager`
+    dump(error)
+    recoverFromNSError()
+} catch let error as? ExternalError { // Maybe throws an Error from the own library which is defined.
+    dump(error)
+    recoverFromLibraryError()
+} catch { // No idea of what might be going on here
+    fatalError()
+    // or just let it go ahead with the error or stop the execution for `error` reason.
+    fatalError()
+}
+```
+
+What is being proposed is much more safe and resilient, in terms of reducing possible paths that an application might take when recovering from an error:
+
+```swift
+import ExternalLibrary
+
+// Given: 
+public func incrementNumberOfFilesOnDirectory(at path: String) throws ExternalError -> Int { ... }
+
+enum ExternalError: Error {
+    case pathNotFoundOrValid
+    case maximumNumberOfFilesReached
+}
+
+// Then:
+do {
+    let newNumberOfFiles = try ExternalUtility.incrementNumberOfFilesOnDirectory(at: path)
+} catch { // Type-safe: error is ExternalError
+    dump(error)
+    recoverFromLibraryError(error)
+}
+
+```
+
+Scenarios where you get type safety:
+
+```swift
+public func foo() throws MyError {
+    throw OtherError.baz // error: OtherError cannot be casted to MyError.
+public func foo() throws MyError {
+}
+```
+
+And where we avoid dead code:
+
+```swift
+// bad 1
+do { 
+    try untypedThrow() 
+} catch let error as TestError {
+  // error is `TestError`
+} catch { /* dead code */ }
+
+// bad 2
+do { try untypedThrow() }
+catch {
+  let error = error as! TestError
+  // error is `TestError`
+}
+
+// good
+do { try typedThrow() }
+catch {
+  // error is `TestError`
+}
+```
+
+Also, there's no impact over `rethrows`, as he can inherit from its inner throwing type:
+
+```swift
+func foo<T>(_ block: () throws T -> Void) rethrows T
+```
+In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one.
 
 # Source compatibility
 This change is purely additive and should not affect source compatibility.
