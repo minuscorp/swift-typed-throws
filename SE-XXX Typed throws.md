@@ -13,7 +13,7 @@ Swift-evolution thread: [Typed throw functions - Evolution / Discussion - Swift 
 
 ## Motivation
 
-Swift is about being explicit about semantics and using types to communicate constraints that apply to specific structures and APIs. Some developers are not satisfied with the current state of `throws` as it is not explicit about errors that are thrown. These leads to the following issues with `throws` current behaviour.
+Swift is known for being explicit about semantics and using types to communicate constraints that apply to specific structures and APIs. Some developers are not satisfied with the current state of `throws` as it is not explicit about errors that are thrown. These leads to the following issues with `throws` current behaviour.
 
 ### Communicates less information than `Result` or `Future`
 
@@ -111,7 +111,7 @@ Let's update the method to load this cat from the network:
 
 ```swift
 /// throws CatError
-func callCatOrThrow() throws -> Cat { // now throws NetworkError addionally
+func callCatOrThrow() throws -> Cat { // now throws NetworkError additionally
     let catJSON = try loadCatJSON() // throws NetworkError
     // ...
 }
