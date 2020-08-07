@@ -13,7 +13,7 @@ Swift Error handling system seems lacking of the other features that the Swift l
 
 # Motivation
 
-Many Swift APIs provide methods marked as `throws`, this, however, provides little to no information to the consumer unless the provider adds documentation about it, which means nothing to the compiler neither the safety of the code being produced, for example:
+Many Swift APIs provide methods marked as `throws`, this, however, provides little to no information to the consumer about what kind of error is being thrown, if any, unless the provider adds documentation about it, which means nothing to the compiler neither the safety of the code being produced. Documentation tends to get stale and then, chances of producing unexpected errors for the user are higher. We illustrate this kind of current behaviour in the following way:
 
 ```swift
 import ExternalLibrary
@@ -32,7 +32,14 @@ do {
 }
 ```
 
-What is being proposed is much more safe and resilient, in terms of reducing possible paths that an application might take when recovering from an error:
+What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
+The proposed semantics are pretty simple and additive from which we have today:
+
+```
+function-signature ::= params-type params-type throws? throws-type?
+```
+
+In the snippet below, we try to ilustrate which would be the end result of the implementation of the current proposal:
 
 ```swift
 import ExternalLibrary
@@ -55,7 +62,7 @@ do {
 
 ```
 
-Scenarios where you get type safety:
+Scenarios where we can make use of the Swift compiler with the current proposal:
 
 ```swift
 public func foo() throws MyError {
@@ -74,24 +81,10 @@ public func foo() throws MyError {
   do {
     try typedThrow1() // Throws OtherError
     try typedThrow2() // Throws AnotherError
-  } catch { // compiler cannot ensure which of the two errors are being emmited so it warns: Cannot infer throwing type from mixed type throwing methods.
+  } catch { // compiler cannot ensure which of the two errors are being emmited
     dump(error) // Is casted to `Error`
   }
 }
-```
-
-Which can be autocorrected in:
-
-```swift
-do {
-   try typedThrow1() // Throws OtherError
-   try typedThrow2() // Throws AnotherError
-} catch let error as OtherError { // The warning generates the missing catch clauses for the typed throws existant in the do block.
-   dump(error)
-} catch let error as AnotherError {
-   dump(error)
-}
-
 ```
 
 And avoid mistyped catching clauses:
@@ -128,26 +121,27 @@ catch {
 }
 ```
 
-Also, there's no impact over `rethrows`, as he can inherit from its inner throwing type:
+Also, there's no impact over `rethrows` clause, as he can inherit from its inner throwing type:
 
 ```swift
 func foo<T>(_ block: () throws T -> Void) rethrows T
 ```
+
 In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one.
 
-### Consistency with other APIs:
+
+In terms of consistency, there's a inequality in terms of how Swift type errors. Swift introduced `Result` in its 5.0 version as a way of somehow fill the gap of the situation of success or failure in an operation. This impact in the code being wirtten, making `throws` a second class tool for error handling. This idea leads to code being written in the following way:
 
 With `Result` you could always:
 
 ```swift
 func getCatResult() -> Result<Cat, CatError>
 
-// but never
-
+// You'll never know that the error being thrown is CatError
 func getCatResult() throws -> Cat
 ```
 
-One has the safety of unwrapping the correct `Error` type but the other one doesn't, so with this proposal:
+Which is totally valid and correct, but declares a clear disadvantage against people using `throws`. One has the safety of unwrapping the correct `Error` type but the other one doesn't. With this proposal we balance both use cases like so:
 
 ```swift
 func getCatResult() throws CatResult -> Cat
