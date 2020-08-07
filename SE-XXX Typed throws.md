@@ -382,13 +382,14 @@ func fooThrower() throws Foo {
     }
 
     [...]
+}
     
 do { try fooThrower() }
 catch .bar { ... }
 catch .baz { ... }
-}
 ```
-As `Foo` is the single type that can be thrown, we no longer need to type the type either when throwing it nor when catching it.
+
+As `Foo` is the single type that can be thrown, we no longer need to specify the type either when throwing it nor when catching it.
 
 And where we avoid dead code:
 
