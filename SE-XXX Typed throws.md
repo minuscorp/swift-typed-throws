@@ -120,12 +120,13 @@ public func foo() throws MyError {
   }
 }
 
-public func foo() throws MyError {
+public func foo() throws { 
   do {
     try typedThrow1() // Throws OtherError
     try typedThrow2() // Throws AnotherError
   } catch { // compiler cannot ensure which of the two errors are being emmited
     dump(error) // Is casted to `Error`
+    throw Error // We throw the type-erased error as allowed by the function signature
   }
 }
 ```
@@ -143,14 +144,12 @@ do {
 And where we avoid dead code:
 
 ```swift
-// bad 1
 do { 
     try untypedThrow() 
 } catch let error as TestError {
   // error is `TestError`
 } catch { /* dead code */ }
 
-// bad 2
 do { try untypedThrow() }
 catch {
   let error = error as! TestError
@@ -170,8 +169,15 @@ Also, there's no impact over `rethrows` clause, as he can inherit from its inner
 func foo<T>(_ block: () throws T -> Void) rethrows T
 ```
 
-In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one.
+In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So all the family of functions in the Standard Library (`map`, `flatMap`, `compactMap`, etc.) that now receive a `rethrows`, can be added with their error typed variants just modifying the signature, as for example:
 
+```swift
+// current one:
+func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
+
+// added one:
+func map<T, E>(_ transform: (Element) throws E -> T) rethrows E -> [T]
+```
 
 In terms of consistency, there's a inequality in terms of how Swift type errors. Swift introduced `Result` in its 5.0 version as a way of somehow fill the gap of the situation of success or failure in an operation. This impact in the code being wirtten, making `throws` a second class tool for error handling. This idea leads to code being written in the following way:
 
