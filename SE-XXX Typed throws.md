@@ -111,7 +111,7 @@ Let's update the method to load this cat from the network:
 
 ```swift
 /// throws CatError
-func callCatOrThrow() throws -> Cat { // now throws NetworkError addiontally
+func callCatOrThrow() throws -> Cat { // now throws NetworkError addionally
     let catJSON = try loadCatJSON() // throws NetworkError
     // ...
 }
@@ -219,7 +219,7 @@ This is even more awful then the first approach, because now we are writing the 
 
 #### Approach 3: `throws` with specific error
 
-So let's compare that to throws, if would be usable with specific errors.
+So let's compare that to `throws`, if it would be usable with specific errors.
 
 ```swift
 func stringFromArray(_ array: [String], at index: Int, errorMessage: String) throws GenericError -> String {
