@@ -1,17 +1,22 @@
-Hello Swift Community. I started a conversation about this on the [Evolution|Proposals](https://forums.swift.org/t/typed-throw-functions/38860/) Forum and some people found interesting that might be worth to write a pitch about it.
+# Typed throws
 
-- Typed `throws`
-- Proposal: SE-NNNNN
-- Authors: @minuscorp
-- Review Manager: TBD
-- Status: Proposed
+* Proposal: [SE-NNNN](NNNN-filename.md)
+* Authors: [Jorge (@minuscorp)](https://github.com/minuscorp), [Torsten Lehmann](https://github.com/torstenlehmann)
+* Review Manager: TBD
+* Status: **Proposed**
 
-# Introduction
+## Introduction
 
-Swift Error handling system seems lacking of the other features that the Swift language has: a type system. Having typed thrown errors allow users to make a more faine-grained error handling and a more safety when facing error handling procedures.
+`throws` in Swift is missing the possibility to use it with specific error types. On the contrary [`Result`](https://developer.apple.com/documentation/swift/result) and [`Future`](https://developer.apple.com/documentation/combine/future) support specific error types. This is inconsistent without reason. The proposal is about introducing the possibility to support specific error types with `throws`.
+
+Swift-evolution thread: [Typed throw functions - Evolution / Discussion - Swift Forums](https://forums.swift.org/t/typed-throw-functions/38860)
+
+## Motivation
 
 
-# Motivation
+<!-- Swift Error handling system seems lacking of the other features that the Swift language has: a type system. Having typed thrown errors allow users to make a more faine-grained error handling and a more safety when facing error handling procedures. -->
+
+
 
 Many Swift APIs provide methods marked as `throws`, this, however, provides little to no information to the consumer about what kind of error is being thrown, if any, unless the provider adds documentation about it, which means nothing to the compiler neither the safety of the code being produced. Documentation tends to get stale and then, chances of producing unexpected errors for the user are higher. We illustrate this kind of current behaviour in the following way:
 
@@ -41,7 +46,7 @@ The Swift Standard Library has left behind its own proper error handling system 
 Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
 
-# Proposal
+## Proposed solution
 
 What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
 The proposed semantics are pretty simple and additive from which we have today:
@@ -160,11 +165,18 @@ func getCatResult() throws CatResult -> Cat
 
 Would be totally valid. So you can put face to face `Result` and `throws` and perform the same operations with different semantics (and the semantics depend on the developer needs) in a free way, and not being obliged to choose one solution over the other one just because it cannot reach the same goal with it.
 
-# Source compatibility
+## Detailed design
+
+## Source compatibility
+
 This change is purely additive and should not affect source compatibility.
 
-# Effect on ABI stability
+## Effect on ABI stability
+
 No known effect.
 
-# Effect on API resilience
+## Effect on API resilience
+
 No known effect.
+
+## Alternatives considered
