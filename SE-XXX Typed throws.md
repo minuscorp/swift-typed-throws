@@ -1,4 +1,4 @@
-Hello Swift Community. I started a conversation about this on the [Evolution|Proposals](https://forums.swift.org/t/typed-throw-functions/38860/) Forum and some people found interesting that might be worth to write a pitch about it.
+cHello Swift Community. I started a conversation about this on the [Evolution|Proposals](https://forums.swift.org/t/typed-throw-functions/38860/) Forum and some people found interesting that might be worth to write a pitch about it.
 
 - Typed `throws`
 - Proposal: SE-NNNNN
@@ -33,11 +33,44 @@ do {
 ```
 
 Furthermore, many developers are being pushed on abandon `throws` methods for `Result` ones, where the error can be easily typed. This create a great desbalance, and sometimes, a poorly choose of the tools to use in order to code because of language limitations.
-In Objective-C, all current throwing functions had an implicit type in the function signature: `NSError`, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
 
-In Objective-C, all current throwing functions had an implicit type in the function signature: `NSError`, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
-The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
-The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` the error being produced, and leaving to the client no choice about how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
+But using explicit errors with `Result` has major implications for a code base. Because the exception handling mechanism ("goto catch") is not built into the language (like `throws`), you need to do that on your own in a "`Result` chaining" (i.e. monadic) way with `flatMap` and similar operators, if you don't want to unwrap/switch/wrap on every chaining/mapping point. Leading to code like this:
+
+```swift
+struct GenericError: Swift.Error {
+    let message: String
+}
+
+struct User {
+    let firstName: String
+    let lastName: String
+}
+
+func stringResultFromArray(_ array: [String], at index: Int, errorMessage: String) -> Result<String, GenericError> {
+    guard array.indices.contains(index) else { return Result.failure(GenericError(message: errorMessage)) }
+    return Result.success(array[index])
+}
+
+// no problem with converting errors, because it is always `GenericError`
+func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
+    return stringResultFromArray(strings, at: 0, errorMessage: "Missing first name")
+        .flatMap { firstName in
+            stringResultFromArray(strings, at: 1, errorMessage: "Missing last name")
+                .flatMap { lastName in
+                    return Result.success(User(firstName: firstName, lastName: lastName))
+            }
+    }
+}
+```
+
+Which ends up in a code hard to read, maintain and even further, be interprreted by the compiler. With the needed `flatMap` operators the compiler will need more and more context to infer the different types, ending in a over-boilerplated code just because you couldn't use `throws` with a type.
+
+In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
+
+The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the Swift's throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
+
+The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` over the error being produced, leaving to the client no choice on how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
+
 Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
 
