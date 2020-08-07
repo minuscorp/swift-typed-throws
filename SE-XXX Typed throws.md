@@ -284,15 +284,18 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 
 ### Objective-C behaviour
 
-In Objective-C, all current throwing functions had an implicit type in the function signature: `NSError`, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
+In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
 
-In Objective-C, all current throwing functions had an implicit type in the function signature: `NSError`, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
-The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
-The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` the error being produced, and leaving to the client no choice about how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
+The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the Swift's throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
+
+The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` over the error being produced, leaving to the client no choice on how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
+
 Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
 
 ## Proposed solution
+## Detailed design
+
 
 What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
 The proposed semantics are pretty simple and additive from which we have today:
@@ -339,12 +342,13 @@ public func foo() throws MyError {
   }
 }
 
-public func foo() throws MyError {
+public func foo() throws { 
   do {
     try typedThrow1() // Throws OtherError
     try typedThrow2() // Throws AnotherError
   } catch { // compiler cannot ensure which of the two errors are being emmited
     dump(error) // Is casted to `Error`
+    throw Error // We throw the type-erased error as allowed by the function signature
   }
 }
 ```
@@ -359,17 +363,38 @@ do {
 }
 ```
 
+Type inference would benefit also of typed `throws` like shown in the following examples:
+
+```swift
+enum Foo: Error { case bar, baz }
+
+func fooThrower() throws Foo {
+    guard someCondition else {
+        throw .bar
+    }
+
+    guard someOtherCondition else {
+        throw .baz
+    }
+
+    [...]
+    
+do { try fooThrower() }
+catch .bar { ... }
+catch .baz { ... }
+}
+```
+As `Foo` is the single type that can be thrown, we no longer need to type the type either when throwing it nor when catching it.
+
 And where we avoid dead code:
 
 ```swift
-// bad 1
 do { 
     try untypedThrow() 
 } catch let error as TestError {
   // error is `TestError`
 } catch { /* dead code */ }
 
-// bad 2
 do { try untypedThrow() }
 catch {
   let error = error as! TestError
@@ -389,8 +414,25 @@ Also, there's no impact over `rethrows` clause, as he can inherit from its inner
 func foo<T>(_ block: () throws T -> Void) rethrows T
 ```
 
-In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one.
+In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So all the family of functions in the Standard Library (`map`, `flatMap`, `compactMap`, etc.) that now receive a `rethrows`, can be added with their error typed variants just modifying the signature, as for example:
 
+```swift
+// current one:
+func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
+
+// added one:
+func map<T, E>(_ transform: (Element) throws E -> T) rethrows E -> [T]
+```
+
+Also, in this regard, given:
+
+```swift
+enum E: Error { case failure }
+
+func f<T>(_: () throws T -> Void) { print(T.self) }
+
+f({ throw E.failure }) // closure gets inferred to be () throws E -> Void so this will compile fine 
+```
 
 In terms of consistency, there's a inequality in terms of how Swift type errors. Swift introduced `Result` in its 5.0 version as a way of somehow fill the gap of the situation of success or failure in an operation. This impact in the code being wirtten, making `throws` a second class tool for error handling. This idea leads to code being written in the following way:
 
@@ -409,9 +451,45 @@ Which is totally valid and correct, but declares a clear disadvantage against pe
 func getCatResult() throws CatResult -> Cat
 ```
 
+And we cannot forget that as `Result(catching: )` works, this should work too to bridge in the other way:
+
+```swift
+extension Result {
+    func get() throws Failure -> Success
+}
+```
+
 Would be totally valid. So you can put face to face `Result` and `throws` and perform the same operations with different semantics (and the semantics depend on the developer needs) in a free way, and not being obliged to choose one solution over the other one just because it cannot reach the same goal with it.
 
-## Detailed design
+There have been many allusions to Library Evolution and how it would affect to this proposal. Out approach with non `@frozen enum`s is quite similar than what happens with switch cases:
+
+```swift
+enum NonFrozenEnum: Error { case cold, warm, hot }
+
+func wheathersLike() throws NonFrozenEnum -> Weather
+
+try { wheathersLike() } 
+catch .cold { ... }
+catch .warm { ... }
+catch .hot { ... } // warning: all cases were catched but NonFrozenEnum might have additional unknown values.
+// So if the warning is resolved:
+catch { // error is still a NonFrozenEnum }
+```
+
+So it maintains backwards compatibility emiting a warning instead of an error. An error could be generated if this proposal doesn't need to keep backwards compatibility with other previous Swift versions.
+
+In terms of subtyping, we're respecting the current model, so:
+
+```swift
+class BaseError: Error {}
+class SubError: BaseError {}
+
+let f1: () -> Void = { ... }
+let f2: () throws SubError -> Void = f1 // Converting a non-throwing function to a throwing one is allowed.
+let f3: () throws BaseError -> Void = f2 // This will also be allowed, but just with the BaseError features, it'll be casted down.
+let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any moment.
+```
+
 
 ## Source compatibility
 
@@ -426,3 +504,4 @@ No known effect.
 No known effect.
 
 ## Alternatives considered
+
