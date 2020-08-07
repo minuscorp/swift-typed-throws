@@ -37,7 +37,8 @@ In Objective-C, all current throwing functions had an implicit type in the funct
 
 In Objective-C, all current throwing functions had an implicit type in the function signature: `NSError`, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
 The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
-The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` the error being produced, and leaving to the client no choice about how to proceed: 
+The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` the error being produced, and leaving to the client no choice about how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
+Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
 
 # Proposal
