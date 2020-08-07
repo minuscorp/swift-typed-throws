@@ -32,6 +32,16 @@ do {
 }
 ```
 
+Furthermore, many developers are being pushed on abandon `throws` methods for `Result` ones, where the error can be easily typed. This create a great desbalance, and sometimes, a poorly choose of the tools to use in order to code because of language limitations.
+In Objective-C, all current throwing functions had an implicit type in the function signature: `NSError`, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
+
+In Objective-C, all current throwing functions had an implicit type in the function signature: `NSError`, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
+The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
+The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` the error being produced, and leaving to the client no choice about how to proceed: 
+
+
+# Proposal
+
 What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
 The proposed semantics are pretty simple and additive from which we have today:
 
