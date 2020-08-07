@@ -1,39 +1,166 @@
-Hello Swift Community. I started a conversation about this on the [Evolution|Proposals](https://forums.swift.org/t/typed-throw-functions/38860/) Forum and some people found interesting that might be worth to write a pitch about it.
+# Typed throws
 
-- Typed `throws`
-- Proposal: SE-NNNNN
-- Authors: @minuscorp
-- Review Manager: TBD
-- Status: Proposed
+* Proposal: [SE-NNNN](NNNN-filename.md)
+* Authors: [Jorge (@minuscorp)](https://github.com/minuscorp), [Torsten Lehmann](https://github.com/torstenlehmann)
+* Review Manager: TBD
+* Status: **Proposed**
 
-# Introduction
+## Introduction
 
-Swift Error handling system seems lacking of the other features that the Swift language has: a type system. Having typed thrown errors allow users to make a more faine-grained error handling and a more safety when facing error handling procedures.
+`throws` in Swift is missing the possibility to use it with specific error types. On the contrary [`Result`](https://developer.apple.com/documentation/swift/result) and [`Future`](https://developer.apple.com/documentation/combine/future) support specific error types. This is inconsistent without reason. The proposal is about introducing the possibility to support specific error types with `throws`.
 
-# Motivation
+Swift-evolution thread: [Typed throw functions - Evolution / Discussion - Swift Forums](https://forums.swift.org/t/typed-throw-functions/38860)
 
-Many Swift APIs provide methods marked as `throws`, this, however, provides little to no information to the consumer about what kind of error is being thrown, if any, unless the provider adds documentation about it, which means nothing to the compiler neither the safety of the code being produced. Documentation tends to get stale and then, chances of producing unexpected errors for the user are higher. We illustrate this kind of current behaviour in the following way:
+## Motivation
+
+Swift is known for being explicit about semantics and using types to communicate constraints that apply to specific structures and APIs. Some developers are not satisfied with the current state of `throws` as it is not explicit about errors that are thrown. These leads to the following issues with `throws` current behaviour.
+
+### Communicates less information than `Result` or `Future`
+
+Assume you have this Error type
 
 ```swift
-import ExternalLibrary
-
-do {
-    let newNumberOfFiles = try ExternalUtility.incrementNumberOfFilesOnDirectory(at: path)
-} catch let error as NSError { // Maybe throws an NSError because it uses `FileManager`
-    dump(error)
-    recoverFromNSError()
-} catch let error as? ExternalError { // Maybe throws an Error from the own library which is defined.
-    dump(error)
-    recoverFromLibraryError()
-} catch { // No idea of what might be going on here
-    fatalError()
-    // or just let it go ahead with the error or stop the execution for `error` reason.
+enum CatError: Error {
+    case sleeps
+    case sitsAtATree
 }
 ```
 
-Furthermore, many developers are being pushed on abandon `throws` methods for `Result` ones, where the error can be easily typed. This create a great unbalance, and sometimes, a poorly choose of the tools to use in order to code because of language limitations.
+Compare
 
-But using explicit errors with `Result` has major implications for a code base. Because the exception handling mechanism ("goto catch") is not built into the language (like `throws`), you need to do that on your own in a "`Result` chaining" (i.e. monadic) way with `flatMap` and similar operators, if you don't want to unwrap/switch/wrap on every chaining/mapping point. Leading to code like this:
+```swift
+func callCat() -> Result<Cat, CatError>
+```
+
+or
+
+```swift
+func callFutureCat() -> Future<Cat, CatError>
+```
+
+with
+
+```swift
+func callCatOrThrow() throws -> Cat
+```
+
+`throws` communicates less information about why the cat is not about to come to you.
+
+### Inconsistent explicitness compared to `Result` or `Future`
+
+`throws` it's not consistent in the order of explicitness in comparison to `Result` or `Future`, which makes it hard to convert between these types or compose them easily.
+
+```swift
+func callAndFeedCat1() -> Result<Cat, CatError> {
+    do {
+        return Result.success(try callCatOrThrow())
+    } catch {
+        // won't compile, because error type guarantee is missing in the first place
+        return Result.failure(error)
+    }
+}
+```
+
+```swift
+func callAndFeedCat2() -> Result<Cat, CatError> {
+    do {
+        return Result.success(try callCatOrThrow())
+    } catch let error as CatError {
+        // compiles
+        return Result.failure(error)
+    } catch {
+        // won't compile, because exhaustiveness can't be checked by the compiler
+        // so what should we return here?
+        return Result.failure(error)
+    }
+}
+```
+
+### Code is not self documenting
+
+Do you at least once stopped at a throwing (or loosely error typed) function wanting to know, what it can throw? Here is a more complex example. Be aware that it's not about a throwing function, but the problem applies to throwing functions as well. The root issue is the loosely typed error.
+
+[urlSession%28_:task:didCompleteWithError:%29 | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
+
+```swift
+optional func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)
+```
+
+> The only errors your delegate receives through the error parameter are client-side errors, such as being unable to resolve the hostname or connect to the host.
+
+Ok so we show a pop-up if such an error occurs like we would if we have a response error. Furthermore we want to provide task cancellation because it's a big file download.
+
+Now the user cancels the file download and sees the error pop-up which is **not** what we wanted.
+
+What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are suprised of this unexpected `NSURLErrorCancelled` error.
+
+Now you know (at least) that you want to ignore this specific error. But which other errors you are not aware of?
+
+### Outdated API documentation
+
+API documentation could become outdated, because it's not checked by the compiler.
+
+Assume some scarce documentation (more thorough documentation is even more likely to get outdated).
+
+```swift
+/// throws CatError
+func callCatOrThrow() throws -> Cat
+```
+
+Let's update the method to load this cat from the network:
+
+```swift
+/// throws CatError
+func callCatOrThrow() throws -> Cat { // now throws NetworkError additionally
+    let catJSON = try loadCatJSON() // throws NetworkError
+    // ...
+}
+
+struct NetworkError: Error {}
+```
+
+And there you have it. No one will check this `NetworkError` in specific catch clauses, even though it's not unlikely to have another error message for network issues.
+
+### Potential drift between thrown errors and catch clauses
+
+The example from section "Outdated API documentation" shows the issue where new errors from an updated API are not recognized by the API user. It's also possible that catched errors are replaced or removed by an updated API. So we end up with outdated catch clauses:
+
+```swift
+/// throws CatError, NetworkError
+func callCatOrThrow() throws -> Cat
+```
+gets updated to
+
+```swift
+/// throws CatError, DatabaseError
+func callCatOrThrow() throws -> Cat
+
+struct DatabaseError: Error {}
+```
+
+No we have outdated catch clauses
+
+```swift
+do {
+    let cat = try callCatOrThrow()
+} catch let error as CatError {
+    // CatError will be catched here
+} catch let error as NetworkError {
+    // won't happen anymore
+} catch {
+    // DatabaseError will be catched here
+}
+```
+
+### `Result` is not the go to replacement for `throws` in imperative languages
+
+Using explicit errors with `Result` has major implications for a code base. Because the exception handling mechanism ("goto catch") is not built into the language (like `throws`), you need to do that on your own, mixing the exception handling mechanism with domain logic (same issue we had with manual memory management in Objective-C before ARC).
+
+#### Approach 1: Chaining Results
+
+If you use `Result` in a functional (i.e. monadic) way, you need extensive use of `map`, `flatMap` and similar operators.
+
+Example is taken from [Question/Idea: Improving explicit error handling in Swift (with enum operations) - Using Swift - Swift Forums](https://forums.swift.org/t/question-idea-improving-explicit-error-handling-in-swift-with-enum-operations/35335).
 
 ```swift
 struct GenericError: Swift.Error {
@@ -50,7 +177,6 @@ func stringResultFromArray(_ array: [String], at index: Int, errorMessage: Strin
     return Result.success(array[index])
 }
 
-// no problem with converting errors, because it is always `GenericError`
 func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
     return stringResultFromArray(strings, at: 0, errorMessage: "Missing first name")
         .flatMap { firstName in
@@ -62,7 +188,105 @@ func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
 }
 ```
 
-Which ends up in a code hard to read, maintain and even further, be interprreted by the compiler. With the needed `flatMap` operators the compiler will need more and more context to infer the different types, ending in a over-boilerplated code just because you couldn't use `throws` with a type.
+That's the functional way of writing exceptions, but Swift does not provide enough functional constructs to handle that comfortably (compare with [Haskell/do notation](https://en.wikibooks.org/wiki/Haskell/do_notation)).
+
+#### Approach 2: Unwrap/switch/wrap on every chaining/mapping point
+
+We can also just unwrap every result by switching over it and wrapping the value or error into a result again.
+
+```swift
+func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
+    let firstNameResult = stringResultFromArray(strings, at: 0, errorMessage: "Missing first name")
+    
+    switch firstNameResult {
+    case .success(let firstName):
+        let lastNameResult = stringResultFromArray(strings, at: 1, errorMessage: "Missing last name")
+        
+        switch lastNameResult {
+        case .success(let lastName):
+            return Result.success(User(firstName: firstName, lastName: lastName))
+        case .failure(let genericError):
+            return Result.failure(genericError)
+        }
+        
+    case .failure(let genericError):
+        return Result.failure(genericError)
+    }
+}
+```
+
+This is even more awful then the first approach, because now we are writing the implementation of the `flatMap` operator over an over again.
+
+#### Approach 3: `throws` with specific error
+
+So let's compare that to `throws`, if it would be usable with specific errors.
+
+```swift
+func stringFromArray(_ array: [String], at index: Int, errorMessage: String) throws GenericError -> String {
+    guard array.indices.contains(index) else { throw GenericError(message: errorMessage) }
+    return array[index]
+}
+
+func userResultFromStrings(strings: [String]) throws GenericError -> User  {
+    let firstName = try stringFromArray(strings, at: 0, errorMessage: "Missing first name")
+    let lastName = try stringFromArray(strings, at: 1, errorMessage: "Missing last name")
+    return User(firstName: firstName, lastName: lastName)
+}
+```
+
+The error handling mechanism is pushed aside and you can see the domain logic more clearly.
+
+#### Error type conversions
+
+In all 3 approaches we are omitting the issue of error type conversions which would be a topic for another proposal. But here's how it would look like for Approach 1 and 3 without further language constructs.
+
+Example is taken from [Question/Idea: Improving explicit error handling in Swift (with enum operations) - Using Swift - Swift Forums](https://forums.swift.org/t/question-idea-improving-explicit-error-handling-in-swift-with-enum-operations/35335).
+
+Approach 1:
+
+```swift
+struct FirstNameError: Swift.Error {}
+
+func firstNameResultFromArray(_ array: [String]) -> Result<String, FirstNameError> {
+    guard array.indices.contains(0) else { return Result.failure(FirstNameError()) }
+    return Result.success(array[0])
+}
+
+func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
+    return firstNameResultFromArray(strings)
+        .map { User(firstName: $0, lastName: "") }
+        .mapError { _ in
+            // Mapping from `FirstNameError` to a `GenericError`
+            GenericError(message: "First name is missing")
+        }
+}
+```
+
+Approach 3:
+
+```swift
+func firstNameResultFromArray(_ array: [String]) throws FirstNameError -> String {
+    guard array.indices.contains(0) else { throw FirstNameError() }
+    return array[0]
+}
+
+func userResultFromStrings(strings: [String]) throws GenericError -> User  {
+    do {
+        let firstName = try stringFromArray(strings, at: 0, errorMessage: "Missing first name")
+        return User(firstName: firstName, lastName: "")        
+    } catch {
+        // Mapping from `FirstNameError` to a `GenericError`
+        throw GenericError(message: "First name is missing")
+    }
+}
+
+```
+
+### Multiple layers of error flow
+
+`// TODO: Add examples and explain`
+
+### Objective-C behaviour
 
 In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
 
@@ -73,7 +297,9 @@ The Swift Standard Library has left behind its own proper error handling system 
 Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
 
-# Proposal
+## Proposed solution
+## Detailed design
+
 
 What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
 The proposed semantics are pretty simple and additive from which we have today:
@@ -269,11 +495,106 @@ let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any mome
 ```
 
 
-# Source compatibility
+### Error scenarios considered
+
+#### Scenario 1: Specific thrown error, general catch clause
+
+```
+func callCat() throws CatError -> Cat
+
+struct CatError {
+    reason: String
+}
+
+do {
+    let cat = try callCat()
+} catch {
+    // error is inferred as `CatError`
+    // so this would compile
+    let reason = error.reason
+}
+```
+
+#### Scenario 2: Specific thrown error, specific catch clause
+
+```
+func callCat() throws CatError -> Cat
+
+struct CatError {
+    reason: String
+}
+
+do {
+    let cat = try callCat()
+} catch error as CatError { // ensure `CatError` even if the API changes in the future
+    // error is inferred as `CatError`
+    // so this would compile
+    let reason = error.reason
+}
+```
+
+No general catch clause needed. If there is one, compiler will show a warning or error.
+
+#### Scenario 3: Specific thrown error, multiple catch clauses
+
+```
+func callCat() throws CatError -> Cat
+
+enum CatError {
+    case sleeps, sitsOnATree
+}
+
+do {
+    let cat = try callCat()
+} catch .sleeps {
+    // handle error
+} catch .sitsOnATree {
+    // handle error
+}
+```
+
+#### Scenario 4: Unspecific thrown error
+
+- Current behaviour of Swift applies
+
+### Type erasure
+
+Erasing an error type of a function that throws is easy as
+
+```
+catch {
+    // assume the error is inferred as `CatError`
+    let typeErasedError: Error = error
+}
+```
+
+### `rethrow` (generic errors in map, filter etc)
+
+`// TODO: Explain, merge with already explained part`
+
+### Error structure
+
+Everything that applies to the error type of `Result` also applies to error type of `throws`. Mainly it needs to conform to `Swift.Error`.
+
+### `async` and `throws`
+
+`// TODO: Maybe we can remove that section`
+
+### Equivalence between `throws` and `Result`
+
+`// TODO: Explain motivation for another proposal and why we want to be compatible between throws and Result`
+
+## Source compatibility
+
 This change is purely additive and should not affect source compatibility.
 
-# Effect on ABI stability
+## Effect on ABI stability
+
 No known effect.
 
-# Effect on API resilience
+## Effect on API resilience
+
 No known effect.
+
+## Alternatives considered
+
