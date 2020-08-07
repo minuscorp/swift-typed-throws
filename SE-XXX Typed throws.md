@@ -282,6 +282,10 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 
 ```
 
+### Multiple layers of error flow
+
+`// TODO: Add examples and explain`
+
 ### Objective-C behaviour
 
 In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
@@ -490,6 +494,95 @@ let f3: () throws BaseError -> Void = f2 // This will also be allowed, but just 
 let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any moment.
 ```
 
+
+### Error scenarios considered
+
+#### Scenario 1: Specific thrown error, general catch clause
+
+```
+func callCat() throws CatError -> Cat
+
+struct CatError {
+    reason: String
+}
+
+do {
+    let cat = try callCat()
+} catch {
+    // error is inferred as `CatError`
+    // so this would compile
+    let reason = error.reason
+}
+```
+
+#### Scenario 2: Specific thrown error, specific catch clause
+
+```
+func callCat() throws CatError -> Cat
+
+struct CatError {
+    reason: String
+}
+
+do {
+    let cat = try callCat()
+} catch error as CatError { // ensure `CatError` even if the API changes in the future
+    // error is inferred as `CatError`
+    // so this would compile
+    let reason = error.reason
+}
+```
+
+No general catch clause needed. If there is one, compiler will show a warning or error.
+
+#### Scenario 3: Specific thrown error, multiple catch clauses
+
+```
+func callCat() throws CatError -> Cat
+
+enum CatError {
+    case sleeps, sitsOnATree
+}
+
+do {
+    let cat = try callCat()
+} catch .sleeps {
+    // handle error
+} catch .sitsOnATree {
+    // handle error
+}
+```
+
+#### Scenario 4: Unspecific thrown error
+
+- Current behaviour of Swift applies
+
+### Type erasure
+
+Erasing an error type of a function that throws is easy as
+
+```
+catch {
+    // assume the error is inferred as `CatError`
+    let typeErasedError: Error = error
+}
+```
+
+### `rethrow` (generic errors in map, filter etc)
+
+`// TODO: Explain, merge with already explained part`
+
+### Error structure
+
+Everything that applies to the error type of `Result` also applies to error type of `throws`. Mainly it needs to conform to `Swift.Error`.
+
+### `async` and `throws`
+
+`// TODO: Maybe we can remove that section`
+
+### Equivalence between `throws` and `Result`
+
+`// TODO: Explain motivation for another proposal and why we want to be compatible between throws and Result`
 
 ## Source compatibility
 
