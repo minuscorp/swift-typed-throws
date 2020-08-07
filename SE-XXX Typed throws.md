@@ -31,7 +31,7 @@ do {
 }
 ```
 
-Furthermore, many developers are being pushed on abandon `throws` methods for `Result` ones, where the error can be easily typed. This create a great desbalance, and sometimes, a poorly choose of the tools to use in order to code because of language limitations.
+Furthermore, many developers are being pushed on abandon `throws` methods for `Result` ones, where the error can be easily typed. This create a great unbalance, and sometimes, a poorly choose of the tools to use in order to code because of language limitations.
 
 But using explicit errors with `Result` has major implications for a code base. Because the exception handling mechanism ("goto catch") is not built into the language (like `throws`), you need to do that on your own in a "`Result` chaining" (i.e. monadic) way with `flatMap` and similar operators, if you don't want to unwrap/switch/wrap on every chaining/mapping point. Leading to code like this:
 
@@ -141,6 +141,29 @@ do {
 }
 ```
 
+Type inference would benefit also of typed `throws` like shown in the following examples:
+
+```swift
+enum Foo: Error { case bar, baz }
+
+func fooThrower() throws Foo {
+    guard someCondition else {
+        throw .bar
+    }
+
+    guard someOtherCondition else {
+        throw .baz
+    }
+
+    [...]
+    
+do { try fooThrower() }
+catch .bar { ... }
+catch .baz { ... }
+}
+```
+As `Foo` is the single type that can be thrown, we no longer need to type the type either when throwing it nor when catching it.
+
 And where we avoid dead code:
 
 ```swift
@@ -179,6 +202,16 @@ func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
 func map<T, E>(_ transform: (Element) throws E -> T) rethrows E -> [T]
 ```
 
+Also, in this regard, given:
+
+```swift
+enum E: Error { case failure }
+
+func f<T>(_: () throws T -> Void) { print(T.self) }
+
+f({ throw E.failure }) // closure gets inferred to be () throws E -> Void so this will compile fine 
+```
+
 In terms of consistency, there's a inequality in terms of how Swift type errors. Swift introduced `Result` in its 5.0 version as a way of somehow fill the gap of the situation of success or failure in an operation. This impact in the code being wirtten, making `throws` a second class tool for error handling. This idea leads to code being written in the following way:
 
 With `Result` you could always:
@@ -196,7 +229,45 @@ Which is totally valid and correct, but declares a clear disadvantage against pe
 func getCatResult() throws CatResult -> Cat
 ```
 
+And we cannot forget that as `Result(catching: )` works, this should work too to bridge in the other way:
+
+```swift
+extension Result {
+    func get() throws Failure -> Success
+}
+```
+
 Would be totally valid. So you can put face to face `Result` and `throws` and perform the same operations with different semantics (and the semantics depend on the developer needs) in a free way, and not being obliged to choose one solution over the other one just because it cannot reach the same goal with it.
+
+There have been many allusions to Library Evolution and how it would affect to this proposal. Out approach with non `@frozen enum`s is quite similar than what happens with switch cases:
+
+```swift
+enum NonFrozenEnum: Error { case cold, warm, hot }
+
+func wheathersLike() throws NonFrozenEnum -> Weather
+
+try { wheathersLike() } 
+catch .cold { ... }
+catch .warm { ... }
+catch .hot { ... } // warning: all cases were catched but NonFrozenEnum might have additional unknown values.
+// So if the warning is resolved:
+catch { // error is still a NonFrozenEnum }
+```
+
+So it maintains backwards compatibility emiting a warning instead of an error. An error could be generated if this proposal doesn't need to keep backwards compatibility with other previous Swift versions.
+
+In terms of subtyping, we're respecting the current model, so:
+
+```swift
+class BaseError: Error {}
+class SubError: BaseError {}
+
+let f1: () -> Void = { ... }
+let f2: () throws SubError -> Void = f1 // Converting a non-throwing function to a throwing one is allowed.
+let f3: () throws BaseError -> Void = f2 // This will also be allowed, but just with the BaseError features, it'll be casted down.
+let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any moment.
+```
+
 
 # Source compatibility
 This change is purely additive and should not affect source compatibility.
