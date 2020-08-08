@@ -80,7 +80,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
 
 Do you at least once stopped at a throwing (or loosely error typed) function wanting to know, what it can throw? Here is a more complex example. Be aware that it's not about a throwing function, but the problem applies to throwing functions as well. The root issue is the loosely typed error.
 
-[urlSession%28_:task:didCompleteWithError:%29 | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
+[urlSession:task:didCompleteWithError: | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
 
 ```swift
 optional func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)
@@ -538,7 +538,7 @@ No general catch clause needed. If there is one, compiler will show a warning or
 
 #### Scenario 3: Specific thrown error, multiple catch clauses
 
-```
+```swift
 func callCat() throws CatError -> Cat
 
 enum CatError {
@@ -562,7 +562,7 @@ do {
 
 Erasing an error type of a function that throws is easy as
 
-```
+```swift
 catch {
     // assume the error is inferred as `CatError`
     let typeErasedError: Error = error
