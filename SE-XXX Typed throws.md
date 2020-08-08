@@ -500,7 +500,7 @@ let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any mome
 
 #### Scenario 1: Specific thrown error, general catch clause
 
-```
+```swift
 func callCat() throws CatError -> Cat
 
 struct CatError {
@@ -518,7 +518,7 @@ do {
 
 #### Scenario 2: Specific thrown error, specific catch clause
 
-```
+```swift
 func callCat() throws CatError -> Cat
 
 struct CatError {
