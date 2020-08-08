@@ -588,7 +588,7 @@ Everything that applies to the error type of `Result` also applies to error type
 ## Source compatibility
 
 Being this change purely additive it would not affect on source compatibility.
-Nevertheless, warnings might be produced in different scenarios Luke the examine below.
+Nevertheless, warnings might be produced in different scenarios like the examine below.
 
 For instance, consider this function:
 
@@ -610,10 +610,11 @@ But given the following client code:
 do { try fooThrower() }
 catch let error as? Foo { ... }
 ```
+
 Which means that by changing to the latter function clients rebuilding will get a warning (saying that error is Foo).
 So developers may have in consideration the addition of types to a plain throwing functions and deide whether the change will affect negatively in the client's code.
 
-Lastly, but not least important, note the possible breaking effects of typing a throwing method into the client's code.
+Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breakin any current behaviour related with the change.
 
 ## Effect on ABI stability
 
