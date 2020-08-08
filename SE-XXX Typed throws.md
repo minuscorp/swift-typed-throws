@@ -602,7 +602,7 @@ Are we allowed to change it to the following - while remaining source compatible
 func fooThrower() throws Foo
 ```
 
-Art first sight it shouldn't be a breaking change, since the equivalence between `Error` and `Foo` is evident.
+At first sight it shouldn't be a breaking change, since the equivalence between `Error` and `Foo` is evident.
 
 But given the following client code:
 
@@ -610,8 +610,10 @@ But given the following client code:
 do { try fooThrower() }
 catch let error as? Foo { ... }
 ```
-
 Which means that by changing to the latter function clients rebuilding will get a warning (saying that error is Foo).
+So developers may have in consideration the addition of types to a plain throwing functions and deide whether the change will affect negatively in the client's code.
+
+Lastly, but not least important, note the possible breaking effects of typing a throwing method into the client's code.
 
 ## Effect on ABI stability
 
