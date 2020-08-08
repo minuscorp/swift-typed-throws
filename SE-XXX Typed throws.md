@@ -587,7 +587,31 @@ Everything that applies to the error type of `Result` also applies to error type
 
 ## Source compatibility
 
-This change is purely additive and should not affect source compatibility.
+Being this change purely additive it would not affect on source compatibility.
+Nevertheless, warnings might be produced in different scenarios Luke the examine below.
+
+For instance, consider this function:
+
+```swift
+func fooThrower() throws
+```
+
+Are we allowed to change it to the following - while remaining source compatible?
+
+```swift
+func fooThrower() throws Foo
+```
+
+Art first sight it shouldn't be a breaking change, since the equivalence between `Error` and `Foo` is evident.
+
+But given the following client code:
+
+```swift
+do { try fooThrower() }
+catch let error as? Foo { ... }
+```
+
+Which means that by changing to the latter function clients rebuilding will get a warning (saying that error is Foo).
 
 ## Effect on ABI stability
 
