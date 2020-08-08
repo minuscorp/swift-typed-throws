@@ -92,13 +92,13 @@ Ok so we show a pop-up if such an error occurs like we would if we have a respon
 
 Now the user cancels the file download and sees the error pop-up which is **not** what we wanted.
 
-What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are suprised of this unexpected `NSURLErrorCancelled` error.
+What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are suprised of this unexpected [`NSURLErrorCancelled`](https://developer.apple.com/documentation/foundation/1508628-url_loading_system_error_codes/nsurlerrorcancelled) error.
 
 Now you know (at least) that you want to ignore this specific error. But which other errors you are not aware of?
 
 ### Outdated API documentation
 
-API documentation could become outdated, because it's not checked by the compiler.
+API documentation could and usually become outdated, because it's not checked by the compiler. The developer's task of documenting every method is more than enough than adding and maintaining the `- throws:` documentation. Which, do not help too much, due to the fact that following the [Apple Developer Markup Formatting Reference](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_markup_formatting_ref/index.html#//apple_ref/doc/uid/TP40016497-CH2-SW1) there's no official way to link from the documentation to the current reference of the throwing type. This leads to an undesired dead end, searching in the library for ourselves for the throwing type that the documentation claims that it does.
 
 Assume some scarce documentation (more thorough documentation is even more likely to get outdated).
 
@@ -123,7 +123,7 @@ And there you have it. No one will check this `NetworkError` in specific catch c
 
 ### Potential drift between thrown errors and catch clauses
 
-The example from section "Outdated API documentation" shows the issue where new errors from an updated API are not recognized by the API user. It's also possible that catched errors are replaced or removed by an updated API. So we end up with outdated catch clauses:
+The example from section "[Outdated API documentation](#outdated-api-documentation)" shows the issue where new errors from an updated API are not recognized by the API user. It's also possible that catched errors are replaced or removed by an updated API. So we end up with outdated catch clauses:
 
 ```swift
 /// throws CatError, NetworkError
