@@ -5,11 +5,15 @@
 * Review Manager: TBD
 * Status: **Proposed**
 
+
+
 ## Introduction
 
 `throws` in Swift is missing the possibility to use it with specific error types. On the contrary [`Result`](https://developer.apple.com/documentation/swift/result) and [`Future`](https://developer.apple.com/documentation/combine/future) support specific error types. This is inconsistent without reason. The proposal is about introducing the possibility to support specific error types with `throws`.
 
 Swift-evolution thread: [Typed throw functions - Evolution / Discussion - Swift Forums](https://forums.swift.org/t/typed-throw-functions/38860)
+
+
 
 ## Motivation
 
@@ -318,9 +322,94 @@ The Swift Standard Library has left behind its own proper error handling system 
 Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
 
+
 ## Proposed solution
+
+`// TODO: What should we put in here and what not?`
+
+> Describe your solution to the problem. Provide examples and describe how they work. Show how your solution is better than current workarounds: is it cleaner, safer, or more efficient?
+
+### Error scenarios considered
+
+#### Scenario 1: Specific thrown error, general catch clause
+
+```swift
+func callCat() throws CatError -> Cat
+
+struct CatError {
+    reason: String
+}
+
+do {
+    let cat = try callCat()
+} catch {
+    // error is inferred as `CatError`
+    // so this would compile
+    let reason = error.reason
+}
+```
+
+#### Scenario 2: Specific thrown error, specific catch clause
+
+```swift
+func callCat() throws CatError -> Cat
+
+struct CatError {
+    reason: String
+}
+
+do {
+    let cat = try callCat()
+} catch error as CatError { // ensure `CatError` even if the API changes in the future
+    // error is inferred as `CatError`
+    // so this would compile
+    let reason = error.reason
+}
+```
+
+No general catch clause needed. If there is one, compiler will show a warning or error.
+
+#### Scenario 3: Specific thrown error, multiple catch clauses
+
+```swift
+func callCat() throws CatError -> Cat
+
+enum CatError {
+    case sleeps, sitsOnATree
+}
+
+do {
+    let cat = try callCat()
+} catch .sleeps {
+    // handle error
+} catch .sitsOnATree {
+    // handle error
+}
+```
+
+#### Scenario 4: Unspecific thrown error
+
+- Current behaviour of Swift applies
+
+### Error structure
+
+Everything that applies to the error type of `Result` also applies to error type of `throws`. Mainly it needs to conform to `Swift.Error`.
+
+### Equivalence between `throws` and `Result`
+
+`// TODO: Explain motivation for another proposal and why we want to be compatible between throws and Result`
+
+
+
 ## Detailed design
 
+`// TODO: Decide what belongs here and what belongs into other sections`
+
+> Describe the design of the solution in detail. If it involves new syntax in the language, show the additions and changes to the Swift grammar. If it's a new API, show the full API and its documentation comments detailing what it does. The detail in this section should be sufficient for someone who is not one of the authors to be able to reasonably implement the feature.
+
+`// TODO: Motivation part is over, we should only speak about the solution`
+
+### Swift grammar additions/changes
 
 What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
 The proposed semantics are pretty simple and additive from which we have today:
@@ -516,69 +605,6 @@ let f3: () throws BaseError -> Void = f2 // This will also be allowed, but just 
 let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any moment.
 ```
 
-
-### Error scenarios considered
-
-#### Scenario 1: Specific thrown error, general catch clause
-
-```swift
-func callCat() throws CatError -> Cat
-
-struct CatError {
-    reason: String
-}
-
-do {
-    let cat = try callCat()
-} catch {
-    // error is inferred as `CatError`
-    // so this would compile
-    let reason = error.reason
-}
-```
-
-#### Scenario 2: Specific thrown error, specific catch clause
-
-```swift
-func callCat() throws CatError -> Cat
-
-struct CatError {
-    reason: String
-}
-
-do {
-    let cat = try callCat()
-} catch error as CatError { // ensure `CatError` even if the API changes in the future
-    // error is inferred as `CatError`
-    // so this would compile
-    let reason = error.reason
-}
-```
-
-No general catch clause needed. If there is one, compiler will show a warning or error.
-
-#### Scenario 3: Specific thrown error, multiple catch clauses
-
-```swift
-func callCat() throws CatError -> Cat
-
-enum CatError {
-    case sleeps, sitsOnATree
-}
-
-do {
-    let cat = try callCat()
-} catch .sleeps {
-    // handle error
-} catch .sitsOnATree {
-    // handle error
-}
-```
-
-#### Scenario 4: Unspecific thrown error
-
-- Current behaviour of Swift applies
-
 ### Type erasure
 
 Erasing an error type of a function that throws is easy as
@@ -594,17 +620,11 @@ catch {
 
 `// TODO: Explain, merge with already explained part`
 
-### Error structure
-
-Everything that applies to the error type of `Result` also applies to error type of `throws`. Mainly it needs to conform to `Swift.Error`.
-
 ### `async` and `throws`
 
 `// TODO: Maybe we can remove that section`
 
-### Equivalence between `throws` and `Result`
 
-`// TODO: Explain motivation for another proposal and why we want to be compatible between throws and Result`
 
 ## Source compatibility
 
@@ -637,13 +657,19 @@ So developers may have in consideration the addition of types to a plain throwin
 
 Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breaking any current behaviour related with the change.
 
+
+
 ## Effect on ABI stability
 
 No known effect.
 
+
+
 ## Effect on API resilience
 
 No known effect.
+
+
 
 ## Alternatives considered
 
