@@ -80,7 +80,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
 
 Do you at least once stopped at a throwing (or loosely error typed) function wanting to know, what it can throw? Here is a more complex example. Be aware that it's not about a throwing function, but the problem applies to throwing functions as well. The root issue is the loosely typed error.
 
-[urlSession%28_:task:didCompleteWithError:%29 | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
+[urlSession:task:didCompleteWithError: | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
 
 ```swift
 optional func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)
@@ -92,13 +92,13 @@ Ok so we show a pop-up if such an error occurs like we would if we have a respon
 
 Now the user cancels the file download and sees the error pop-up which is **not** what we wanted.
 
-What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are suprised of this unexpected `NSURLErrorCancelled` error.
+What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are suprised of this unexpected [`NSURLErrorCancelled`](https://developer.apple.com/documentation/foundation/1508628-url_loading_system_error_codes/nsurlerrorcancelled) error.
 
 Now you know (at least) that you want to ignore this specific error. But which other errors you are not aware of?
 
 ### Outdated API documentation
 
-API documentation could become outdated, because it's not checked by the compiler.
+API documentation could and usually become outdated, because it's not checked by the compiler. The developer's task of documenting every method is more than enough than adding and maintaining the `- throws:` documentation. Which, do not help too much, due to the fact that following the [Apple Developer Markup Formatting Reference](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_markup_formatting_ref/index.html#//apple_ref/doc/uid/TP40016497-CH2-SW1) there's no official way to link from the documentation to the current reference of the throwing type. This leads to an undesired dead end, searching in the library for ourselves for the throwing type that the documentation claims that it does.
 
 Assume some scarce documentation (more thorough documentation is even more likely to get outdated).
 
@@ -123,7 +123,7 @@ And there you have it. No one will check this `NetworkError` in specific catch c
 
 ### Potential drift between thrown errors and catch clauses
 
-The example from section "Outdated API documentation" shows the issue where new errors from an updated API are not recognized by the API user. It's also possible that catched errors are replaced or removed by an updated API. So we end up with outdated catch clauses:
+The example from section "[Outdated API documentation](#outdated-api-documentation)" shows the issue where new errors from an updated API are not recognized by the API user. It's also possible that catched errors are replaced or removed by an updated API. So we end up with outdated catch clauses:
 
 ```swift
 /// throws CatError, NetworkError
@@ -382,13 +382,14 @@ func fooThrower() throws Foo {
     }
 
     [...]
+}
     
 do { try fooThrower() }
 catch .bar { ... }
 catch .baz { ... }
-}
 ```
-As `Foo` is the single type that can be thrown, we no longer need to type the type either when throwing it nor when catching it.
+
+As `Foo` is the single type that can be thrown, we no longer need to specify the type either when throwing it nor when catching it.
 
 And where we avoid dead code:
 
@@ -499,7 +500,7 @@ let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any mome
 
 #### Scenario 1: Specific thrown error, general catch clause
 
-```
+```swift
 func callCat() throws CatError -> Cat
 
 struct CatError {
@@ -517,7 +518,7 @@ do {
 
 #### Scenario 2: Specific thrown error, specific catch clause
 
-```
+```swift
 func callCat() throws CatError -> Cat
 
 struct CatError {
@@ -537,7 +538,7 @@ No general catch clause needed. If there is one, compiler will show a warning or
 
 #### Scenario 3: Specific thrown error, multiple catch clauses
 
-```
+```swift
 func callCat() throws CatError -> Cat
 
 enum CatError {
@@ -561,7 +562,7 @@ do {
 
 Erasing an error type of a function that throws is easy as
 
-```
+```swift
 catch {
     // assume the error is inferred as `CatError`
     let typeErasedError: Error = error
@@ -586,7 +587,34 @@ Everything that applies to the error type of `Result` also applies to error type
 
 ## Source compatibility
 
-This change is purely additive and should not affect source compatibility.
+Being this change purely additive it would not affect on source compatibility.
+Nevertheless, warnings might be produced in different scenarios like the examine below.
+
+For instance, consider this function:
+
+```swift
+func fooThrower() throws
+```
+
+Are we allowed to change it to the following - while remaining source compatible?
+
+```swift
+func fooThrower() throws Foo
+```
+
+At first sight it shouldn't be a breaking change, since the equivalence between `Error` and `Foo` is evident.
+
+But given the following client code:
+
+```swift
+do { try fooThrower() }
+catch let error as? Foo { ... }
+```
+
+Which means that by changing to the latter function clients rebuilding will get a warning (saying that error is `Foo`).
+So developers may have in consideration the addition of types to a plain throwing functions and deide whether the change will affect negatively in the client's code.
+
+Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breaking any current behaviour related with the change.
 
 ## Effect on ABI stability
 
