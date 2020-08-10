@@ -46,6 +46,23 @@ func callCatOrThrow() throws -> Cat
 
 `throws` communicates less information about why the cat is not about to come to you.
 
+If you write your own module with multiple throwing functions, that depend on each other, it's even harder to track down, which error can be thrown from which function.
+
+```swift
+func callKids() throws -> Kids // maybe you still know that this can only by a `KidsError`
+func callSpouse() throws -> Spouse // but a `Spouse` can fail in many different ways right?
+func callCat() throws -> Cat // `CatError` I guess
+
+func callFamily() throws -> Family {
+	let kids = try callKids()
+	let spouse = try callSpouse()
+	let cat = try callCat()
+	return Family(kids: kids, spouse: spouse, cat: cat)
+}
+```
+
+As a user of `callFamily() throws` it gets a lot harder to understand, which errors can be thrown. Even if reading the functions implementation would be possible (which sometimes is not), than you are usally forced to read the whole implementation, collecting all uses of `try` and investigating the whole error flow dependencies of the sub program. Which almost nobody does, and the people that try often produce mistakes, because complexity quickly outgrows.
+
 ### Inconsistent explicitness compared to `Result` or `Future`
 
 `throws` it's not consistent in the order of explicitness in comparison to `Result` or `Future`, which makes it hard to convert between these types or compose them easily.
@@ -80,7 +97,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
 
 Do you at least once stopped at a throwing (or loosely error typed) function wanting to know, what it can throw? Here is a more complex example. Be aware that it's not about a throwing function, but the problem applies to throwing functions as well. The root issue is the loosely typed error.
 
-[urlSession:task:didCompleteWithError: | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
+[urlSession(\_:task:didCompleteWithError:) | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
 
 ```swift
 optional func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)
@@ -92,9 +109,9 @@ Ok so we show a pop-up if such an error occurs like we would if we have a respon
 
 Now the user cancels the file download and sees the error pop-up which is **not** what we wanted.
 
-What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are suprised of this unexpected [`NSURLErrorCancelled`](https://developer.apple.com/documentation/foundation/1508628-url_loading_system_error_codes/nsurlerrorcancelled) error.
+What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are surprised of this unexpected [`NSURLErrorCancelled`](https://developer.apple.com/documentation/foundation/1508628-url_loading_system_error_codes/nsurlerrorcancelled) error.
 
-Now you know (at least) that you want to ignore this specific error. But which other errors you are not aware of?
+Now you know (at least) that you want to ignore this specific error. But which other errors are you not aware of?
 
 ### Outdated API documentation
 
@@ -282,17 +299,21 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 
 ```
 
-### Multiple layers of error flow
-
-`// TODO: Add examples and explain`
-
 ### Objective-C behaviour
+
+`// TODO: Not sure if we need that much history :D`
 
 In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
 
+`// TODO: we should not pretend what is correct or the right way, there are always pros and cons, we should just summarize them`
+
 The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the Swift's throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
 
+`// TODO: Optionals have there place, I think we should just say that the are sometimes not expressive enough and don't support "go to catch" semantics`
+
 The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` over the error being produced, leaving to the client no choice on how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
+
+`// TODO: That should be up to the API developer. An argument would be "because it easier to read for common cases"`
 
 Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
