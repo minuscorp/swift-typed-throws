@@ -611,10 +611,10 @@ do { try fooThrower() }
 catch let error as? Foo { ... }
 ```
 
-Which means that by changing to the latter function clients rebuilding will get a warning (saying that error is Foo).
+Which means that by changing to the latter function clients rebuilding will get a warning (saying that error is `Foo`).
 So developers may have in consideration the addition of types to a plain throwing functions and deide whether the change will affect negatively in the client's code.
 
-Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breakin any current behaviour related with the change.
+Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breaking any current behaviour related with the change.
 
 ## Effect on ABI stability
 
