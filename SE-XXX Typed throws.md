@@ -19,7 +19,7 @@ Swift-evolution thread: [Typed throw functions - Evolution / Discussion - Swift 
 
 Swift is known for being explicit about semantics and using types to communicate constraints that apply to specific structures and APIs. Some developers are not satisfied with the current state of `throws` as it is not explicit about errors that are thrown. These leads to the following issues with `throws` current behaviour.
 
-### Communicates less information than `Result` or `Future`
+### Communicates less error information than `Result` or `Future`
 
 Assume you have this Error type
 
@@ -97,7 +97,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
 }
 ```
 
-### Code is not self documenting
+### Code is less self documenting
 
 Do you at least once stopped at a throwing (or loosely error typed) function wanting to know, what it can throw? Here is a more complex example. Be aware that it's not about a throwing function, but the problem applies to throwing functions as well. The root issue is the loosely typed error.
 
@@ -238,9 +238,138 @@ func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
 
 This is even more awful then the first approach, because now we are writing the implementation of the `flatMap` operator over an over again.
 
-#### Approach 3: `throws` with specific error
+### Objective-C behaviour
 
-So let's compare that to `throws`, if it would be usable with specific errors.
+`// TODO: Not sure if we need that much history :D, but we can refer to the specific errors Swift already uses in its Codable protocol`
+
+In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
+
+`// TODO: we should not pretend what is correct or the right way, there are always pros and cons, we should just summarize them`
+
+The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the Swift's throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
+
+`// TODO: Optionals have there place, I think we should just say that the are sometimes not expressive enough and don't support "go to catch" semantics. But we can refer to Optionals having some comparable static information regarding the error structure (so throws has another execution semantic)`
+
+The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` over the error being produced, leaving to the client no choice on how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
+
+`// TODO: That should be up to the API developer. An argument would be "because it easier to read for common cases"`
+
+Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
+
+
+
+## Proposed solution
+
+`// TODO: What should we put in here and what not?`
+
+> Describe your solution to the problem. Provide examples and describe how they work. Show how your solution is better than current workarounds: is it cleaner, safer, or more efficient?
+
+In general we want to add the possibility to use `throws` with a specific error.
+
+```swift
+func callCat() throws CatError -> Cat
+```
+
+Here is how `throws` with specific error would reduce the issues mentioned in "[Motivation](#motivation)".
+
+### Communicates the same amount of error information like `Result` or `Future`
+
+Compare
+
+```swift
+func callCat() -> Result<Cat, CatError>
+```
+
+with
+
+```swift
+func callCat() throws CatError -> Cat
+```
+
+It now contains the same error information like `Result`.
+
+### Consistent explicitness compared to `Result` or `Future`
+
+`throws` is now consistent in the order of explicitness in comparison to `Result` or `Future`, which makes it easy to convert between these types.
+
+```swift
+func callCat() throws CatError -> Cat
+
+func callAndFeedCat1() -> Result<Cat, CatError> {
+    do {
+        return Result.success(try callCat())
+    } catch {
+        // would compile now, because error is inferred as `CatError`
+        return Result.failure(error)
+    }
+}
+```
+
+```swift
+func callAndFeedCat2() -> Result<Cat, CatError> {
+    do {
+        return Result.success(try callCat())
+    } catch let error as CatError {
+        return Result.failure(error)
+    } catch {
+    	// this catch clause would become obsolete because the catch is already exhaustive
+    }
+}
+```
+
+### Code is more self documenting
+
+```swift
+struct RequestCatError: Error {
+	case network, forbidden, notFound, internalServerError, unknown
+}
+
+func requestCat() throws RequestCatError -> Cat
+```
+
+It's now guaranteed which errors can happen.
+
+
+### Drift between thrown errors and catch clauses can be stopped
+
+You have an API with
+
+```swift
+func callCat() throws CatError -> Cat
+```
+
+and you make sure that you are only aware of a `CatError` by explictly catching it
+
+```swift
+do {
+    let cat = try callCat()
+} catch let error as CatError {
+    // CatError will be catched here
+}
+```
+
+Now the API gets updated to
+
+```swift
+func callCat() throws TurtleError -> Cat
+```
+
+which would result in non compiling code on your side
+
+```swift
+do {
+    let cat = try callCat()
+} catch let error as CatError { // would not compile, because you catch something that is not thrown
+}
+```
+
+You can now update you catch clauses to make sure that you are aware of the new error cases and that you handle them properly.
+
+### `throws` is made for imperative languages
+
+Let's compare the two approaches from above to `throws`, if it would be usable with specific errors.
+
+#### Approach 3: `throws` with specific error
 
 ```swift
 func stringFromArray(_ array: [String], at index: Int, errorMessage: String) throws GenericError -> String {
@@ -259,7 +388,7 @@ The error handling mechanism is pushed aside and you can see the domain logic mo
 
 #### Error type conversions
 
-In all 3 approaches we are omitting the issue of error type conversions which would be a topic for another proposal. But here's how it would look like for Approach 1 and 3 without further language constructs.
+Be aware that in all 3 approaches we are omitting the issue of error type conversions which would be a topic for another proposal. But here's how it would look like for Approach 1 and 3 without further language constructs.
 
 Example is taken from [Question/Idea: Improving explicit error handling in Swift (with enum operations) - Using Swift - Swift Forums](https://forums.swift.org/t/question-idea-improving-explicit-error-handling-in-swift-with-enum-operations/35335).
 
@@ -303,31 +432,13 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 
 ```
 
-### Objective-C behaviour
-
-`// TODO: Not sure if we need that much history :D, but we can refer to the specific errors Swift already uses in its Codable protocol`
-
-In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
-
-`// TODO: we should not pretend what is correct or the right way, there are always pros and cons, we should just summarize them`
-
-The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the Swift's throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
-
-`// TODO: Optionals have there place, I think we should just say that the are sometimes not expressive enough and don't support "go to catch" semantics. But we can refer to Optionals having some comparable static information regarding the error structure (so throws has another execution semantic)`
-
-The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` over the error being produced, leaving to the client no choice on how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
-
-`// TODO: That should be up to the API developer. An argument would be "because it easier to read for common cases"`
-
-Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
 
 
 
-## Proposed solution
 
-`// TODO: What should we put in here and what not?`
 
-> Describe your solution to the problem. Provide examples and describe how they work. Show how your solution is better than current workarounds: is it cleaner, safer, or more efficient?
+
+`// TODO: I think we should put that to the detailed solution part now`
 
 ### Error scenarios considered
 
@@ -349,7 +460,23 @@ do {
 }
 ```
 
-#### Scenario 2: Specific thrown error, specific catch clause
+#### Scenario 2: Multiple specific thrown errors, general catch clauses
+
+`// TODO: Maybe this decision has ugly consequences for the future, if we want to improve type inference for the error`
+
+```swift
+func callKids() throws KidsError -> Kids
+func callCat() throws CatError -> Cat
+
+do {
+    let kids = try callKids()
+    let cat = try callCat()
+} catch {
+    // `error` is just `Swift.Error`
+}
+```
+
+#### Scenario 3: Specific thrown error, specific catch clause
 
 ```swift
 func callCat() throws CatError -> Cat
@@ -369,7 +496,7 @@ do {
 
 No general catch clause needed. If there is one, compiler will show a warning or error.
 
-#### Scenario 3: Specific thrown error, multiple catch clauses
+#### Scenario 4: Specific thrown error, multiple catch clauses
 
 ```swift
 func callCat() throws CatError -> Cat
@@ -387,7 +514,7 @@ do {
 }
 ```
 
-#### Scenario 4: Unspecific thrown error
+#### Scenario 5: Unspecific thrown error
 
 - Current behaviour of Swift applies
 
