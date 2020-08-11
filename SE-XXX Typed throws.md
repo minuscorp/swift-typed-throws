@@ -420,7 +420,7 @@ func fooThrower() throws Foo {
 }
 ```
 
-2. In a similar way, a function that `throws` an `enum` type, can be catched wit each of its cases individually declared, in different `catch` clausess that can omit the type of which they belong to.
+2. In a similar way, a function that `throws` an `enum` type, can be catched with each of its cases individually declared, in different `catch` clauses that can omit the type of which they belong to, as it is inferred from the function signature being called in the `do` block.
 
 ```swift
 do { try fooThrower() }
@@ -437,6 +437,21 @@ protocol CatProtocol {
     func feedCat() throws CatError -> CatStatus
 }
 ```
+
+The protocol function with typed `throws` are not restricted to `associatedtype`s and any error being valid in any of the cases above is valid too, doesn't matter the origin of it as far as it satisfies the current visibility restrictions regarding parameters in a function:
+
+```swift
+private struct CatError: Error {}
+
+public func feedCat() throws CatError -> CatStatus // error: feedCat cannot be declared public because its parameter uses a private type.
+
+// But:
+public func feedCat() throws -> CatStatus // Only throws CatError
+// Does not generate any compiler warning nor error.
+```
+
+
+> // TODO: Where to put this?
 
 And where we avoid dead code:
 
@@ -458,32 +473,6 @@ do { try typedThrow() }
 catch {
   // error is `TestError`
 }
-```
-
-Also, there's no impact over `rethrows` clause, as he can inherit from its inner throwing type:
-
-```swift
-func foo<T>(_ block: () throws T -> Void) rethrows T
-```
-
-In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So all the family of functions in the Standard Library (`map`, `flatMap`, `compactMap`, etc.) that now receive a `rethrows`, can be added with their error typed variants just modifying the signature, as for example:
-
-```swift
-// current one:
-func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
-
-// added one:
-func map<T, E>(_ transform: (Element) throws E -> T) rethrows E -> [T]
-```
-
-Also, in this regard, given:
-
-```swift
-enum E: Error { case failure }
-
-func f<T>(_: () throws T -> Void) { print(T.self) }
-
-f({ throw E.failure }) // closure gets inferred to be () throws E -> Void so this will compile fine 
 ```
 
 In terms of consistency, there's a inequality in terms of how Swift type errors. Swift introduced `Result` in its 5.0 version as a way of somehow fill the gap of the situation of success or failure in an operation. This impact in the code being wirtten, making `throws` a second class tool for error handling. This idea leads to code being written in the following way:
@@ -616,9 +605,37 @@ catch {
 }
 ```
 
-### `rethrow` (generic errors in map, filter etc)
+### `rethrow` (generic errors in map, filter, etc)
 
 `// TODO: Explain, merge with already explained part`
+
+While affecting to the `throws` keyword, there should be to have in consideration the `rethrows` clause when a type is present in the method signature, altough there is no impact over rethrows, as it inherits from its inner throwing type: 
+
+```swift
+func foo<T>(_ block: () throws T -> Void) rethrows T
+```
+
+In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So all the family of functions in the Standard Library (`map`, `flatMap`, `compactMap`, etc.) that now receive a `rethrows`, can be added with their error typed variants just modifying the signature, as for example:
+
+```swift
+// current one:
+func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
+
+// added one:
+func map<T, E>(_ transform: (Element) throws E -> T) rethrows E -> [T]
+```
+
+All the rules explained above apply to `rethrows`, and from this proposal we think that they have to receive the same attributes.
+
+There's room also for generic errors, where automatically are constrained to `Error`, but the developer can constraint them to more specific errors to generate more fine-grained error throwing thanks to inheritance.
+
+```swift
+enum E: Error { case failure }
+
+func f<T>(_: () throws T -> Void) { print(T.self) }
+
+f({ throw E.failure }) // closure gets inferred to be () throws E -> Void so this will compile fine 
+```
 
 ### Error structure
 
