@@ -305,7 +305,7 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 
 ### Objective-C behaviour
 
-`// TODO: Not sure if we need that much history :D`
+`// TODO: Not sure if we need that much history :D, but we can refer to the specific errors Swift already uses in its Codable protocol`
 
 In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
 
@@ -313,7 +313,7 @@ In Objective-C, all current functions that take a double-pointer to `NSError` (a
 
 The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the Swift's throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
 
-`// TODO: Optionals have there place, I think we should just say that the are sometimes not expressive enough and don't support "go to catch" semantics`
+`// TODO: Optionals have there place, I think we should just say that the are sometimes not expressive enough and don't support "go to catch" semantics. But we can refer to Optionals having some comparable static information regarding the error structure (so throws has another execution semantic)`
 
 The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` over the error being produced, leaving to the client no choice on how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
 
