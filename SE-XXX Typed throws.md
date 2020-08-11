@@ -391,6 +391,7 @@ public func foo() throws {
   }
 }
 ```
+
 3. A function that `throws` a typed error cannot be catched inside a `do` block using casting to other type unrelated to it, generating an error if occurred.
 
 ```swift
@@ -404,7 +405,6 @@ do {
 Type inference is a powerful tool built-in Swift language that leverages many boilerplate into simplier and easier to read code. This rules apply to the current proposal, specifically regarding `enum` errors.
 
 1. A function that `throws` a type based on an `enum` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
-
 
 ```swift
 enum Foo: Error { case bar, baz }
@@ -426,6 +426,16 @@ func fooThrower() throws Foo {
 do { try fooThrower() }
 catch .bar { ... }
 catch .baz { ... }
+```
+
+When protocols are involved, we can define naturally typed `throws` functions using global or `associatedtypes` that conform to `Swift.Error`.
+
+```swift
+protocol CatProtocol {
+    associatedtype CatError: Error // The explicit Error conformance could be ommited if there's a consumer that define the type as a throwing one.
+    
+    func feedCat() throws CatError -> CatStatus
+}
 ```
 
 And where we avoid dead code:
