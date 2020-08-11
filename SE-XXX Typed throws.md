@@ -302,13 +302,40 @@ Those methods can easily be `throws` with or without type, because the developer
 
 
 What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
-The proposed semantics are pretty simple and additive from which we have today:
+
+We define the proposed semantics represented as how the function would be mangled or just as a pseudocode:
 
 ```
 function-signature ::= params-type params-type throws? throws-type?
 ```
 
-In the snippet below, we try to ilustrate which would be the end result of the implementation of the current proposal:
+This gets translated into a more Swifty grammar that would be:
+
+```swift
+func/init(params: params-type...) (throws throws-type?)? (-> return-type)
+```
+
+Where, following our kitty example, we could write:
+
+```swift
+// From:
+/// throws CatError
+func callCatOrThrow() throws -> Cat
+
+// To:
+func callCatOrThrow() throws CatError -> Cat
+
+// Being CatError:
+struct CatError: Swift.Error {}
+```
+
+In the example above, despite being pretty simple, stablishes all the rules that applies to typed throwing functions:
+
+1. Any function or init method that is marked as `throws` can declare which type will be thrown in the function body.
+2. Just one type of error (if any), can be added to the function signature.
+3. The error **must** conform to `Swift.Error`, following the same rules as the `throw` statement.
+
+Whith these three simple rules, we can elaborate a bit more in depth which are the implications of this:
 
 ```swift
 import ExternalLibrary
@@ -328,10 +355,14 @@ do {
     dump(error)
     recoverFromLibraryError(error)
 }
-
 ```
 
-Scenarios where we can make use of the Swift compiler with the current proposal:
+The most evident scenario is that no longer is needed to catch a certain type in the `catch` clauses, due to the fact that the generic `catch` clause will become strongly typed with the type specified in the function signature.
+
+This single simple scenario opens up to a whole family of possible scenarios that should be mentioned for the sake of clarity.
+In first place we will specify different examples where the Swift compiler interprets the new code and make decisions about the code in ways that it wasn't working before:
+
+1. A typed `throws` function cannot throw other type unrelated (by inheritance). If this happens, a compilation error will be generated as in the following example:
 
 ```swift
 public func foo() throws MyError {
@@ -345,7 +376,11 @@ public func foo() throws MyError {
     throw MyError.baz 
   }
 }
+```
 
+2. A plain throwing function that throw different errors inside the same `do` statement are type-erased into the `catch` statement, being possible to (as of today), `catch` concrete errors and handle them if needed.
+
+```swift
 public func foo() throws { 
   do {
     try typedThrow1() // Throws OtherError
@@ -356,8 +391,7 @@ public func foo() throws {
   }
 }
 ```
-
-And avoid mistyped catching clauses:
+3. A function that `throws` a typed error cannot be catched inside a `do` block using casting to other type unrelated to it, generating an error if occurred.
 
 ```swift
 do {
@@ -367,7 +401,10 @@ do {
 }
 ```
 
-Type inference would benefit also of typed `throws` like shown in the following examples:
+Type inference is a powerful tool built-in Swift language that leverages many boilerplate into simplier and easier to read code. This rules apply to the current proposal, specifically regarding `enum` errors.
+
+1. A function that `throws` a type based on an `enum` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
+
 
 ```swift
 enum Foo: Error { case bar, baz }
@@ -380,16 +417,16 @@ func fooThrower() throws Foo {
     guard someOtherCondition else {
         throw .baz
     }
-
-    [...]
 }
-    
+```
+
+2. In a similar way, a function that `throws` an `enum` type, can be catched wit each of its cases individually declared, in different `catch` clausess that can omit the type of which they belong to.
+
+```swift
 do { try fooThrower() }
 catch .bar { ... }
 catch .baz { ... }
 ```
-
-As `Foo` is the single type that can be thrown, we no longer need to specify the type either when throwing it nor when catching it.
 
 And where we avoid dead code:
 
