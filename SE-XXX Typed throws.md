@@ -670,7 +670,7 @@ catch {
 
 ### `rethrow` (generic errors in map, filter, etc)`
 
-While affecting to the `throws` keyword, there should be to have in consideration the `rethrows` clause when a type is present in the method signature, altough there is no impact over rethrows, as it inherits from its inner throwing type: 
+While affecting to the `throws` keyword, there should be to have in consideration the `rethrows` clause when a type is present in the method signature, altough there is no impact over `rethrows`, as it inherits from its inner throwing type: 
 
 ```swift
 func foo<T>(_ block: () throws T -> Void) rethrows T
@@ -693,11 +693,51 @@ All the rules explained above apply to `rethrows`, and from this proposal we thi
 There's room also for generic errors, where automatically are constrained to `Error`, but the developer can constraint them to more specific errors to generate more fine-grained error throwing thanks to inheritance.
 
 ```swift
+protocol BaseError: Error {
+    var underlyingReason: String { get }
+}
+
+protocol ConcreteError: BaseError {}
+
+enum DomainError: ConcreteError {
+    case foo
+    
+    var underlyingReason: String {
+        var description = ""
+        dump(error, to: &description)
+        return description
+    }
+}
+
+struct OneError: BaseError {
+    var underlyingReason: String {
+        "foo"
+    }
+}
+
+func foo<T: BaseError>() throws T { ... }
+
+// The generic gets resolved as `OneError` which implements `BaseError`, 
+// function signature changes to `foo() throws OneError`.
+do { try foo(OneError()) }
+catch { error is `OneError` }
+
+// The generic gets resolved as `DomainError` which implements `ConcreteError` which implements `BaseError`,
+// function signature changes to `foo() throws DomainError
+do { try foo(DomainError.foo) }
+catch { error is `DomainError` }
+```
+
+There has to be noted that there's a difference between the rules that apply to generics in Swift nowadays besides what is being proposed because there's a restriction where you cannot declare a generic which type is not used in the function signature, that applies even to the return type of the method if it has not been used in the parameter list before. This rule does not apply in typed `throws`, where you can specify a generic that is being only used as constraint for the throwing type and not in the function signature itself. This generic acts as if it were a common generic and can be used in the function body or even in the return type or in the parameter list as long as the rules that apply to the proposal are satisfied.
+[Type inference](#type-inference), a topic that has been already discussed, has its place when generics are involved and, where more power to the type system they provide. This allows us to write code like the following without any compromise.
+
+```swift
 enum E: Error { case failure }
 
-func f<T>(_: () throws T -> Void) { print(T.self) }
+func f<T>(_ t: () throws T -> Void) { print(T.self) }
 
-f({ throw E.failure }) // closure gets inferred to be () throws E -> Void so this will compile fine 
+f({ throw E.failure }) // closure gets inferred to be `() throws E -> Void` so this will compile fine 
+// Prints: E.Type
 ```
 
 ### Error structure
