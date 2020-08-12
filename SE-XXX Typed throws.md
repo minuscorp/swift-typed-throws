@@ -439,6 +439,8 @@ func callCatOrThrow() throws CatError -> Cat
 struct CatError: Swift.Error {}
 ```
 
+### The grammar rules
+
 In the example above, despite being pretty simple, stablishes all the rules that applies to typed throwing functions:
 
 1. Any function or init method that is marked as `throws` can declare which type will be thrown in the function body.
@@ -472,7 +474,9 @@ The most evident scenario is that no longer is needed to catch a certain type in
 This single simple scenario opens up to a whole family of possible scenarios that should be mentioned for the sake of clarity.
 In first place we will specify different examples where the Swift compiler interprets the new code and make decisions about the code in ways that it wasn't working before:
 
-1. A typed `throws` function cannot throw other type unrelated (by inheritance). If this happens, a compilation error will be generated as in the following example:
+### Inheritance
+
+A typed `throws` function cannot throw other type unrelated (by inheritance). If this happens, a compilation error will be generated as in the following example:
 
 ```swift
 public func foo() throws MyError {
@@ -488,7 +492,9 @@ public func foo() throws MyError {
 }
 ```
 
-2. A plain throwing function that throw different errors inside the same `do` statement are type-erased into the `catch` statement, being possible to (as of today), `catch` concrete errors and handle them if needed.
+### Multiple throwing types in the same do statement
+
+A plain throwing function that throw different errors inside the same `do` statement are type-erased into the `catch` statement, being possible to (as of today), `catch` concrete errors and handle them if needed.
 
 ```swift
 public func foo() throws { 
@@ -502,7 +508,9 @@ public func foo() throws {
 }
 ```
 
-3. A function that `throws` a typed error cannot be catched inside a `do` block using casting to other type unrelated to it, generating an error if occurred.
+### Unrelated type casting
+
+A function that `throws` a typed error cannot be catched inside a `do` block using casting to other type unrelated to it, generating an error if occurred.
 
 ```swift
 do {
@@ -511,6 +519,8 @@ do {
    fatalError() 
 }
 ```
+
+### Type inference
 
 Type inference is a powerful tool built-in Swift language that leverages many boilerplate into simplier and easier to read code. This rules apply to the current proposal, specifically regarding `enum` errors.
 
@@ -537,6 +547,8 @@ do { try fooThrower() }
 catch .bar { ... }
 catch .baz { ... }
 ```
+
+### Protocols
 
 When protocols are involved, we can define naturally typed `throws` functions using global or `associatedtypes` that conform to `Swift.Error`.
 
@@ -585,6 +597,8 @@ catch {
 }
 ```
 
+### Consistency accross error handling
+
 In terms of consistency, there's a inequality in terms of how Swift type errors. Swift introduced `Result` in its 5.0 version as a way of somehow fill the gap of the situation of success or failure in an operation. This impact in the code being wirtten, making `throws` a second class tool for error handling. This idea leads to code being written in the following way:
 
 With `Result` you could always:
@@ -611,6 +625,8 @@ extension Result {
 ```
 
 Would be totally valid. So you can put face to face `Result` and `throws` and perform the same operations with different semantics (and the semantics depend on the developer needs) in a free way, and not being obliged to choose one solution over the other one just because it cannot reach the same goal with it.
+
+### Library Evolution
 
 There have been many allusions to Library Evolution and how it would affect to this proposal. Out approach with non `@frozen enum`s is quite similar than what happens with switch cases:
 
@@ -652,9 +668,7 @@ catch {
 }
 ```
 
-### `rethrow` (generic errors in map, filter, etc)
-
-`// TODO: Explain, merge with already explained part`
+### `rethrow` (generic errors in map, filter, etc)`
 
 While affecting to the `throws` keyword, there should be to have in consideration the `rethrows` clause when a type is present in the method signature, altough there is no impact over rethrows, as it inherits from its inner throwing type: 
 
@@ -674,6 +688,8 @@ func map<T, E>(_ transform: (Element) throws E -> T) rethrows E -> [T]
 
 All the rules explained above apply to `rethrows`, and from this proposal we think that they have to receive the same attributes.
 
+### Generics
+
 There's room also for generic errors, where automatically are constrained to `Error`, but the developer can constraint them to more specific errors to generate more fine-grained error throwing thanks to inheritance.
 
 ```swift
@@ -687,12 +703,6 @@ f({ throw E.failure }) // closure gets inferred to be () throws E -> Void so thi
 ### Error structure
 
 Everything that applies to the error type of `Result` also applies to error type of `throws`. Mainly it needs to conform to `Swift.Error`.
-
-### `async` and `throws`
-
-`// TODO: Maybe we can remove that section`
-
-
 
 ## Source compatibility
 
@@ -725,19 +735,13 @@ So developers may have in consideration the addition of types to a plain throwin
 
 Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breaking any current behaviour related with the change.
 
-
-
 ## Effect on ABI stability
 
 No known effect.
 
-
-
 ## Effect on API resilience
 
 No known effect.
-
-
 
 ## Alternatives considered
 
