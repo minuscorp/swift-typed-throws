@@ -422,7 +422,7 @@ function-signature ::= params-type params-type throws? throws-type?
 This gets translated into a more Swifty grammar that would be:
 
 ```swift
-func/init(params: params-type...) (throws throws-type?)? (-> return-type)
+(func name | init)(params: params-type...) (throws throws-type?)? (-> return-type)?
 ```
 
 Where, following our kitty example, we could write:
@@ -443,7 +443,7 @@ struct CatError: Swift.Error {}
 
 In the example above, despite being pretty simple, stablishes all the rules that applies to typed throwing functions:
 
-1. Any function or init method that is marked as `throws` can declare which type will be thrown in the function body.
+1. Any function or init method that is marked as `throws` can declare which type will be thrown from the function body.
 2. Just one type of error (if any), can be added to the function signature.
 3. The error **must** conform to `Swift.Error`, following the same rules as the `throw` statement.
 
@@ -469,7 +469,7 @@ do {
 }
 ```
 
-The most evident scenario is that no longer is needed to catch a certain type in the `catch` clauses, due to the fact that the generic `catch` clause will become strongly typed with the type specified in the function signature.
+The most evident scenario for a do block with a single thrown error inside is that it is no longer needed to catch a certain type in the catch clauses, due to the fact that the generic catch clause will become strongly typed with the error type specified in the throwing function's signature.
 
 This single simple scenario opens up to a whole family of possible scenarios that should be mentioned for the sake of clarity.
 In first place we will specify different examples where the Swift compiler interprets the new code and make decisions about the code in ways that it wasn't working before:
