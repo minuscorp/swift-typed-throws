@@ -419,7 +419,7 @@ We define the proposed semantics represented as how the function would be mangle
 function-signature ::= params-type params-type throws? throws-type?
 ```
 
-This gets translated into a more Swifty grammar that would be:
+Which can be translated into a more Swift-related grammar in the former way:
 
 ```swift
 (func name | init)(params: params-type...) (throws throws-type?)? (-> return-type)?
@@ -445,7 +445,7 @@ In the example above, despite being pretty simple, stablishes all the rules that
 
 1. Any function or init method that is marked as `throws` can declare which type will be thrown from the function body.
 2. Just one type of error (if any), can be added to the function signature.
-3. The error **must** conform to `Swift.Error`, following the same rules as the `throw` statement.
+3. The error **must** conform to `Swift.Error`, by inheritance or by direct conformation and follow the same rules that apply to the `throw` statement.
 
 Whith these three simple rules, we can elaborate a bit more in depth which are the implications of this:
 
@@ -492,6 +492,21 @@ public func foo() throws MyError {
 }
 ```
 
+Whether the following example is totally valid, where the general `catch` statement casts the `Error` being thrown from the function to the one stablished by the signature, although it does not generate any compile error or warning:
+
+```swift
+class BaseError: Error { init() { ... } }
+class ConcreteError: BaseError { }
+
+func foo() throws BaseError { throw BaseError() }
+do { try foo() }
+catch { /* error is BaseError */ }
+
+func baz() throws BaseError { throw ConcreteError() }
+do { try baz() }
+catch { /* error is BaseError */ }
+```
+
 ### Multiple throwing types in the same do statement
 
 A plain throwing function that throw different errors inside the same `do` statement are type-erased into the `catch` statement, being possible to (as of today), `catch` concrete errors and handle them if needed.
@@ -522,9 +537,7 @@ do {
 
 ### Type inference
 
-Type inference is a powerful tool built-in Swift language that leverages many boilerplate into simplier and easier to read code. This rules apply to the current proposal, specifically regarding `enum` errors.
-
-1. A function that `throws` a type based on an `enum` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
+1. A function that `throws` an `enum` based `Error` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
 
 ```swift
 enum Foo: Error { case bar, baz }
@@ -540,7 +553,7 @@ func fooThrower() throws Foo {
 }
 ```
 
-2. In a similar way, a function that `throws` an `enum` type, can be catched with each of its cases individually declared, in different `catch` clauses that can omit the type of which they belong to, as it is inferred from the function signature being called in the `do` block.
+2. Assuming it is the only thrown error type in the `do` block, an `enum` based `Error` thrown by a typed throws can have its cases catched, with each case having a separate catch clause. When catching cases the type of the `case` can be omitted, as it is inferred from the throwing function.
 
 ```swift
 do { try fooThrower() }
@@ -743,7 +756,7 @@ f({ throw E.failure }) // closure gets inferred to be `() throws E -> Void` so t
 
 ### Error structure
 
-Everything that applies to the error type of `Result` also applies to error type of `throws`. Mainly it needs to conform to `Swift.Error`.
+As explained in [the grammar rules](#the-grammar-rules): Everything that applies to the error type of `Result` also applies to error type of `throws`.
 
 ## Source compatibility
 
