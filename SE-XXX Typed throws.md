@@ -504,8 +504,6 @@ do {
 }
 ```
 
-In case there are two
-
 No general catch clause needed. If there is one, compiler will show a warning or error.
 
 #### Scenario 4: Specific thrown error, multiple catch clauses
