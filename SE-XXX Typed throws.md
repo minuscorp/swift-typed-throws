@@ -481,7 +481,7 @@ Another example is a variant of the example above where you have already catched
 
 ```swift
 catch error as KidsError { ... }
-catch { /* error is CatError because the other error has been already catched */ }
+catch { /* error is Error because the type cannot be inferred */ }
 ```
 
 This scenarios, fill the gap about the boilerplate needed to write the needed code to catch different errors from a single `do` clause, where generating warnings or errors for autocompleting the missing `catch` cases would be too intrusive and even break source compatibility. With this autompletion rules, we scan the different errors being thrown and which ones are already catched in order to autocomplete the remaining cases only if the developer requires them.
