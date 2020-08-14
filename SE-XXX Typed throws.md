@@ -432,12 +432,6 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 
 ```
 
-
-
-
-
-
-
 `// TODO: I think we should put that to the detailed solution part now`
 
 ### Error scenarios considered
@@ -476,13 +470,29 @@ do {
 }
 ```
 
+This can be corrected by an autocompletion approach, giving the option to the developer to write down like:
+
+```swift
+catch error as KidsError { ... } // Autocompletion
+catch error as CatError { ... } // Autocompletion
+```
+
+Another example is a variant of the example above where you have already catched specifically one of the errors thrown:
+
+```swift
+catch error as KidsError { ... }
+catch { /* error is CatError because the other error has been already catched */ }
+```
+
+This scenarios, fill the gap about the boilerplate needed to write the needed code to catch different errors from a single `do` clause, where generating warnings or errors for autocompleting the missing `catch` cases would be too intrusive and even break source compatibility. With this autompletion rules, we scan the different errors being thrown and which ones are already catched in order to autocomplete the remaining cases only if the developer requires them.
+
 #### Scenario 3: Specific thrown error, specific catch clause
 
 ```swift
 func callCat() throws CatError -> Cat
 
-struct CatError {
-    reason: String
+struct CatError: Error {
+    let reason: String
 }
 
 do {
@@ -493,6 +503,8 @@ do {
     let reason = error.reason
 }
 ```
+
+In case there are two
 
 No general catch clause needed. If there is one, compiler will show a warning or error.
 
