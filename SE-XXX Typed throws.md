@@ -327,7 +327,7 @@ You have an API with
 func callCat() throws CatError -> Cat
 ```
 
-and you make sure that you are aware of a possible `CatError` by explictly catching it
+and you make sure that you are aware of a possible `CatError` by explicitly catching it
 
 ```swift
 do {
