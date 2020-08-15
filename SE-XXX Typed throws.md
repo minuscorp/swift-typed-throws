@@ -119,7 +119,7 @@ Now you know (at least) that you want to ignore this specific error. But which o
 
 ### Outdated API documentation
 
-API documentation could and usually become outdated, because it's not checked by the compiler. The developer's task of documenting every method is more than enough than adding and maintaining the `- throws:` documentation. Which, do not help too much, due to the fact that following the [Apple Developer Markup Formatting Reference](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_markup_formatting_ref/index.html#//apple_ref/doc/uid/TP40016497-CH2-SW1) there's no official way to link from the documentation to the current reference of the throwing type. This leads to an undesired dead end, searching in the library for ourselves for the throwing type that the documentation claims that it does.
+API documentation could and usually become outdated, because it's not checked by the compiler. Furthermore the`- throws:` documentation does not provide linking to errors ([Apple Developer Markup Formatting Reference](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_markup_formatting_ref/index.html#//apple_ref/doc/uid/TP40016497-CH2-SW1)) making it even harder to find the error types in questions.
 
 Assume some scarce documentation (more thorough documentation is even more likely to get outdated).
 
@@ -238,24 +238,13 @@ func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
 
 This is even more awful then the first approach, because now we are writing the implementation of the `flatMap` operator over an over again.
 
-### Objective-C behaviour
+### Patterns of Swift libraries
 
-`// TODO: Not sure if we need that much history :D, but we can refer to the specific errors Swift already uses in its Codable protocol`
+There are specific error types in typical Swift libraries like [DecodingError](https://developer.apple.com/documentation/swift/decodingerror), [CryptoKitError](https://developer.apple.com/documentation/cryptokit/cryptokiterror) or [ArchiveError](https://developer.apple.com/documentation/applearchive/archiveerror). But it's not visible without documentation, where these errors can emerge.
 
-In Objective-C, all current functions that take a double-pointer to `NSError` (a typical pattern in Foundation APIs) have an implicit type in the function signature, and, as has been pointed out, this does not provide more information that the current generic `Error`. But developers were free to subclass `NSError` and add it to its methods knowing that, the client would know at call time which kind of error would be raised if something went wrong.
+On the other hand error type erasure has it's place. If an extension point for an API should be provided, it is often to restrictive to expect specific errors to be thrown. `Decodable`s [init(from:)](https://developer.apple.com/documentation/swift/decodable/2894081-init) may be to restrictive with an explicit error type provided by the API.
 
-`// TODO: we should not pretend what is correct or the right way, there are always pros and cons, we should just summarize them`
-
-The assumption that every error in the current Apple's ecosystem was an `NSError` an hence, convertible to `Error`, made `throws` loose its type. But nowadays, there are APIs (`Decodable` -> `DecodingError`, `StringUTF8Validation` -> `UTF8ValidationError`, among others) that makes the correct use of the Swift's throwing pattern but the client (when those APIs are available), cannot distinguish one from the other one.
-
-`// TODO: Optionals have there place, I think we should just say that the are sometimes not expressive enough and don't support "go to catch" semantics. But we can refer to Optionals having some comparable static information regarding the error structure (so throws has another execution semantic)`
-
-The Swift Standard Library has left behind its own proper error handling system over the usage of `Optionals`, which are not meant to represent an `Error` but even the total erasure of it, leaving into a `nil` over the error being produced, leaving to the client no choice on how to proceed: unwrapping means that something wen't wrong, but I have any information about it. How does the developer should proceed.
-
-`// TODO: That should be up to the API developer. An argument would be "because it easier to read for common cases"`
-
-Those methods can easily be `throws` with or without type, because the developer has already a tool to reduce the error to a `nil` value with `try?`, so, why limiting the developer to make a proper error handling when the tools are already there but we decice to just ignore them?
-
+Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/blob/master/docs/ErrorHandlingRationale.rst) there is valid usage for optionals and throws and we propose even for a typed throws. It comes down to how explicit an API should be and this can vary substantially based on requirements.
 
 
 ## Proposed solution
@@ -264,7 +253,7 @@ Those methods can easily be `throws` with or without type, because the developer
 
 > Describe your solution to the problem. Provide examples and describe how they work. Show how your solution is better than current workarounds: is it cleaner, safer, or more efficient?
 
-In general we want to add the possibility to use `throws` with a specific error.
+In general we want to add the possibility to use `throws` with a single, specific error.
 
 ```swift
 func callCat() throws CatError -> Cat
@@ -298,8 +287,8 @@ func callCat() throws CatError -> Cat
 func callAndFeedCat1() -> Result<Cat, CatError> {
     do {
         return Result.success(try callCat())
-    } catch {
-        // would compile now, because error is inferred as `CatError`
+    } catch let error as CatError {
+        // would compile now, because error is `CatError`
         return Result.failure(error)
     }
 }
@@ -338,7 +327,7 @@ You have an API with
 func callCat() throws CatError -> Cat
 ```
 
-and you make sure that you are only aware of a `CatError` by explictly catching it
+and you make sure that you are aware of a possible `CatError` by explictly catching it
 
 ```swift
 do {
@@ -388,7 +377,7 @@ The error handling mechanism is pushed aside and you can see the domain logic mo
 
 #### Error type conversions
 
-Be aware that in all 3 approaches we are omitting the issue of error type conversions which would be a topic for another proposal. But here's how it would look like for Approach 1 and 3 without further language constructs.
+Be aware that in all 3 approaches we are omitting the issue of simplifying error type conversions, which can be a topic for another proposal. But here's how it would look like for Approach 1 and 3 without further language constructs.
 
 Example is taken from [Question/Idea: Improving explicit error handling in Swift (with enum operations) - Using Swift - Swift Forums](https://forums.swift.org/t/question-idea-improving-explicit-error-handling-in-swift-with-enum-operations/35335).
 
@@ -424,13 +413,92 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
     do {
         let firstName = try stringFromArray(strings, at: 0, errorMessage: "Missing first name")
         return User(firstName: firstName, lastName: "")        
-    } catch {
+    } catch let error as FirstNameError {
         // Mapping from `FirstNameError` to a `GenericError`
         throw GenericError(message: "First name is missing")
     }
 }
 
 ```
+
+An example with multiple errors can be found here:
+
+https://forums.swift.org/t/typed-throw-functions/38860/122.
+
+
+
+## Detailed design
+
+`// TODO: Decide what belongs here and what belongs into other sections`
+
+> Describe the design of the solution in detail. If it involves new syntax in the language, show the additions and changes to the Swift grammar. If it's a new API, show the full API and its documentation comments detailing what it does. The detail in this section should be sufficient for someone who is not one of the authors to be able to reasonably implement the feature.
+
+`// TODO: Motivation part is over, we should only speak about the solution`
+
+### Swift grammar additions/changes
+
+What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
+
+We define the proposed semantics represented as how the function would be mangled or just as a pseudocode:
+
+```
+function-signature ::= params-type params-type throws? throws-type?
+```
+
+Which can be translated into a more Swift-related grammar in the former way:
+
+```swift
+(func name | init)(params: params-type...) (throws throws-type?)? (-> return-type)?
+```
+
+Where, following our kitty example, we could write:
+
+```swift
+// From:
+/// throws CatError
+func callCatOrThrow() throws -> Cat
+
+// To:
+func callCatOrThrow() throws CatError -> Cat
+
+// Being CatError:
+struct CatError: Swift.Error {}
+```
+
+### The grammar rules
+
+In the example above, despite being pretty simple, stablishes all the rules that applies to typed throwing functions:
+
+1. Any function or init method that is marked as `throws` can declare which type will be thrown from the function body.
+2. Just one type of error (if any), can be added to the function signature.
+3. The error **must** conform to `Swift.Error`, by inheritance or by direct conformation and follow the same rules that apply to the `throw` statement.
+
+Whith these three simple rules, we can elaborate a bit more in depth which are the implications of this:
+
+```swift
+import ExternalLibrary
+
+// Given: 
+public func incrementNumberOfFilesOnDirectory(at path: String) throws ExternalError -> Int { ... }
+
+enum ExternalError: Error {
+    case pathNotFoundOrValid
+    case maximumNumberOfFilesReached
+}
+
+// Then:
+do {
+    let newNumberOfFiles = try ExternalUtility.incrementNumberOfFilesOnDirectory(at: path)
+} catch { // Type-safe: error is ExternalError
+    dump(error)
+    recoverFromLibraryError(error)
+}
+```
+
+The most evident scenario for a do block with a single thrown error inside is that it is no longer needed to catch a certain type in the catch clauses, due to the fact that the generic catch clause will become strongly typed with the error type specified in the throwing function's signature.
+
+This single simple scenario opens up to a whole family of possible scenarios that should be mentioned for the sake of clarity.
+In first place we will specify different examples where the Swift compiler interprets the new code and make decisions about the code in ways that it wasn't working before:
 
 `// TODO: I think we should put that to the detailed solution part now`
 
@@ -535,81 +603,6 @@ Everything that applies to the error type of `Result` also applies to error type
 ### Equivalence between `throws` and `Result`
 
 `// TODO: Explain motivation for another proposal and why we want to be compatible between throws and Result`
-
-
-
-## Detailed design
-
-`// TODO: Decide what belongs here and what belongs into other sections`
-
-> Describe the design of the solution in detail. If it involves new syntax in the language, show the additions and changes to the Swift grammar. If it's a new API, show the full API and its documentation comments detailing what it does. The detail in this section should be sufficient for someone who is not one of the authors to be able to reasonably implement the feature.
-
-`// TODO: Motivation part is over, we should only speak about the solution`
-
-### Swift grammar additions/changes
-
-What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
-
-We define the proposed semantics represented as how the function would be mangled or just as a pseudocode:
-
-```
-function-signature ::= params-type params-type throws? throws-type?
-```
-
-Which can be translated into a more Swift-related grammar in the former way:
-
-```swift
-(func name | init)(params: params-type...) (throws throws-type?)? (-> return-type)?
-```
-
-Where, following our kitty example, we could write:
-
-```swift
-// From:
-/// throws CatError
-func callCatOrThrow() throws -> Cat
-
-// To:
-func callCatOrThrow() throws CatError -> Cat
-
-// Being CatError:
-struct CatError: Swift.Error {}
-```
-
-### The grammar rules
-
-In the example above, despite being pretty simple, stablishes all the rules that applies to typed throwing functions:
-
-1. Any function or init method that is marked as `throws` can declare which type will be thrown from the function body.
-2. Just one type of error (if any), can be added to the function signature.
-3. The error **must** conform to `Swift.Error`, by inheritance or by direct conformation and follow the same rules that apply to the `throw` statement.
-
-Whith these three simple rules, we can elaborate a bit more in depth which are the implications of this:
-
-```swift
-import ExternalLibrary
-
-// Given: 
-public func incrementNumberOfFilesOnDirectory(at path: String) throws ExternalError -> Int { ... }
-
-enum ExternalError: Error {
-    case pathNotFoundOrValid
-    case maximumNumberOfFilesReached
-}
-
-// Then:
-do {
-    let newNumberOfFiles = try ExternalUtility.incrementNumberOfFilesOnDirectory(at: path)
-} catch { // Type-safe: error is ExternalError
-    dump(error)
-    recoverFromLibraryError(error)
-}
-```
-
-The most evident scenario for a do block with a single thrown error inside is that it is no longer needed to catch a certain type in the catch clauses, due to the fact that the generic catch clause will become strongly typed with the error type specified in the throwing function's signature.
-
-This single simple scenario opens up to a whole family of possible scenarios that should be mentioned for the sake of clarity.
-In first place we will specify different examples where the Swift compiler interprets the new code and make decisions about the code in ways that it wasn't working before:
 
 ### Inheritance
 
