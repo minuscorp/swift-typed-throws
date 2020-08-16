@@ -505,7 +505,8 @@ In first place we will specify different examples where the Swift compiler inter
 `// TODO: This is the \catch\ proposal, to be determined whether it should be includded in the final draft or not`
 
 Because we now need to explicitly catch specific errors in `catch` clauses a lot, a shorter form is being suggested.
-Having to write catch let error as FooError seems a bit inconsistent with the rest of how catch works, as error is inferred to be a constant of type Error in the general catch clause without mentioning let error.
+Having to write `catch let error as FooError` seems a bit inconsistent with the rest of how `catch` works, as `error` is inferred to be a constant of type `Error` in the general `catch` clause without mentioning `let error`.
+
 
 ```swift
 do { ... }
