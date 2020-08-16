@@ -500,7 +500,7 @@ In first place we will specify different examples where the Swift compiler inter
 
 `// TODO: I think we should put that to the detailed solution part now`
 
-### `catch` clasuses become verbose
+### Reducing `catch` clause verbosity
 
 `// TODO: This is the \catch\ proposal, to be determined whether it should be includded in the final draft or not`
 
@@ -997,4 +997,3 @@ No known effect.
 No known effect.
 
 ## Alternatives considered
-
