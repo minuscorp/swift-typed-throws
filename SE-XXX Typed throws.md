@@ -504,7 +504,7 @@ In first place we will specify different examples where the Swift compiler inter
 
 `// TODO: This is the \catch\ proposal, to be determined whether it should be includded in the final draft or not`
 
-From the side of the `catch` clause there are becoming verbose due to the fact of being the place where `error` is being casted from its primitive `Error` to a more specific `error`.
+Because we now need to explicitly catch specific errors in `catch` clauses a lot, a shorter form is being suggested.
 Having to write `catch let error as FooError` seems a bit inconsistent with the rest of how `catch` works, as `error` is inferred to be a constant of type `Error`. The following example makes it pretty clear.
 
 ```swift
@@ -515,17 +515,17 @@ catch let error as FooError { ... }
 catch { ... }
 ```
 
-This unbalanced behaviour comming from the same reserved word can induce confusion when writing down different specific and general catch clauses, having to declare error by themselves in one case and not in the other.
+This inconsistency can induce confusion when writing down different specific and general catch clauses, having to declare `error` on your own in one case and omitting it in the other.
 
 For this reason, we propose to simplify specific `catch` clauses to avoid the learning curve from a `catch`-all paradigm to a more enxhaustive one.
 
-The grammar is composed by the following:
+Some examples for demonstration:
 
 ```swift
 catch ErrorType { /* error is ErrorType */ }
 ```
 
-This comes handy with `class` and `struct` error types, but shines its best with `enum` types.
+This comes in handy with `class` and `struct` error types, but most of all with `enum` types.
 
 ```swift
 enum SomeErrors: Error { case foo, bar, baz }
@@ -558,11 +558,12 @@ catch .one { ... }
 catch .two { ... } 
 ```
 
-And where multiple enums are being caught, it would be ony needed to specify the type of those cases that were repeated in every enum.
+And where multiple enums are being caught, it would be only needed to specify the type of those cases that were repeated in every enum.
 
 ```swift
-enum One { case one, two, three }
-enum Two { case two, three, four }
+enum One: Error { case one, two, three }
+enum Two: Error { case two, three, four }
+
 
 do { ... }
 catch .one { ... }
@@ -573,7 +574,8 @@ catch Two.three { ... }
 catch .four { ... }
 ```
 
-This kind of scenarios are untypical but possible, also there's always room to `catch One` and handle each case in a switch statement.
+These scenarios are uncommon but possible, also there's always room to `catch One` and handle each case in a switch statement.
+
 
 As a side note, this change in the expression in merely additive and has no impact on the current source.
 
