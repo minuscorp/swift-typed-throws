@@ -892,13 +892,15 @@ catch {
 
 ### `rethrow` (generic errors in map, filter, etc)`
 
-While affecting to the `throws` keyword, there should be to have in consideration the `rethrows` clause when a type is present in the method signature, altough there is no impact over `rethrows`, as it propagates the throwing type from its inner block: 
+While affecting to the `throws` keyword, we need to consider `rethrows` too when a type is present in the inner functions signature. Altough there is no impact over `rethrows`, as it propagates the throwing type from its inner block: 
+
 
 ```swift
 func foo<T>(_ block: () throws T -> Void) rethrows
 ```
 
-In the example above there's no need to constraint `T: Error`, as other any kind of object that does not implement `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So all the family of functions in the Standard Library (`map`, `flatMap`, `compactMap`, etc.) that now receive a `rethrows`, can be added with their error typed variants just modifying the signature, as for example:
+In the example above there's no need to constraint `T: Error`, as any other kind of object that does not conform to `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So the set of functions in the Standard Library (`map`, `flatMap`, `compactMap`, etc.) that support `rethrows`, can be advanced to their error typed versions just modifying the signature, as for example:
+
 
 ```swift
 // current one:
