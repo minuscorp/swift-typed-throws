@@ -505,7 +505,7 @@ In first place we will specify different examples where the Swift compiler inter
 `// TODO: This is the \catch\ proposal, to be determined whether it should be includded in the final draft or not`
 
 Because we now need to explicitly catch specific errors in `catch` clauses a lot, a shorter form is being suggested.
-Having to write `catch let error as FooError` seems a bit inconsistent with the rest of how `catch` works, as `error` is inferred to be a constant of type `Error`. The following example makes it pretty clear.
+Having to write catch let error as FooError seems a bit inconsistent with the rest of how catch works, as error is inferred to be a constant of type Error in the general catch clause without mentioning let error.
 
 ```swift
 do { ... }
@@ -518,6 +518,12 @@ catch { ... }
 This inconsistency can induce confusion when writing down different specific and general catch clauses, having to declare `error` on your own in one case and omitting it in the other.
 
 For this reason, we propose to simplify specific `catch` clauses to avoid the learning curve from a `catch`-all paradigm to a more enxhaustive one.
+
+We define the proposed semantics as an additive change from the [current pattern](https://docs.swift.org/swift-book/ReferenceManual/Statements.html#grammar_catch-pattern) in the following way:
+
+```
+catch -> type-identifier
+```
 
 Some examples for demonstration:
 
@@ -577,7 +583,7 @@ catch .four { ... }
 These scenarios are uncommon but possible, also there's always room to `catch One` and handle each case in a switch statement.
 
 
-As a side note, this change in the expression in merely additive and has no impact on the current source.
+This change in the expression is merely additive and has no impact on the current source.
 
 ### Error scenarios considered
 
@@ -957,7 +963,7 @@ f({ throw E.failure }) // closure gets inferred to be `() throws E -> Void` so t
 
 ### Error structure
 
-As explained in [the grammar rules](#the-grammar-rules): Everything that applies to the error type of `Result` also applies to error type of `throws`.
+As explained in [the rules](#the-grammar-rules): Everything that applies to the error type of `Result` also applies to error type of `throws`.
 
 ## Source compatibility
 
@@ -999,3 +1005,5 @@ No known effect.
 No known effect.
 
 ## Alternatives considered
+
+Remove the new `catch-Type` pattern from the proposal. 
