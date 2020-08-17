@@ -518,12 +518,12 @@ catch { ... }
 
 This inconsistency can induce confusion when writing down different specific and general catch clauses, having to declare `error` on your own in one case and omitting it in the other.
 
-For this reason, we propose to simplify specific `catch` clauses to avoid the learning curve from a `catch`-all paradigm to a more enxhaustive one.
 
-We define the proposed semantics as an additive change from the [current pattern](https://docs.swift.org/swift-book/ReferenceManual/Statements.html#grammar_catch-pattern) in the following way:
+We define the proposed semantics as an additive change to the [catch-pattern](https://docs.swift.org/swift-book/ReferenceManual/Statements.html#grammar_catch-pattern) in the following way:
+
 
 ```
-catch -> type-identifier
+catch-pattern -> type-identifier
 ```
 
 Some examples for demonstration:
