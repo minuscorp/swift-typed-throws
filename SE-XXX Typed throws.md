@@ -57,14 +57,14 @@ func callSpouse() throws -> Spouse // but a `Spouse` can fail in many different 
 func callCat() throws -> Cat // `CatError` I guess
 
 func callFamily() throws -> Family {
-	let kids = try callKids()
-	let spouse = try callSpouse()
-	let cat = try callCat()
-	return Family(kids: kids, spouse: spouse, cat: cat)
+    let kids = try callKids()
+    let spouse = try callSpouse()
+    let cat = try callCat()
+    return Family(kids: kids, spouse: spouse, cat: cat)
 }
 ```
 
-As a user of `callFamily() throws` it gets a lot harder to understand, which errors can be thrown. Even if reading the functions implementation would be possible (which sometimes is not), than you are usally forced to read the whole implementation, collecting all uses of `try` and investigating the whole error flow dependencies of the sub program. Which almost nobody does, and the people that try often produce mistakes, because complexity quickly outgrows.
+As a user of `callFamily() throws` it gets a lot harder to understand, which errors can be thrown. Even if reading the functions implementation would be possible (which sometimes is not), then you are usally forced to read the whole implementation, collecting all uses of `try` and investigating the whole error flow dependencies of the sub program. Which almost nobody does, and the people that try often produce mistakes, because complexity quickly outgrows.
 
 ### Inconsistent explicitness compared to `Result` or `Future`
 
@@ -300,7 +300,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
     } catch let error as CatError {
         return Result.failure(error)
     } catch {
-    	// this catch clause would become obsolete because the catch is already exhaustive
+        // this catch clause would become obsolete because the catch is already exhaustive
     }
 }
 ```
@@ -309,7 +309,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
 
 ```swift
 struct RequestCatError: Error {
-	case network, forbidden, notFound, internalServerError, unknown
+    case network, forbidden, notFound, internalServerError, unknown
 }
 
 func requestCat() throws RequestCatError -> Cat
@@ -351,7 +351,7 @@ do {
 }
 ```
 
-You can now update you catch clauses to make sure that you are aware of the new error cases and that you handle them properly.
+You can now update your `catch` clauses to make sure that you are aware of the new error cases and that you handle them properly.
 
 ### `throws` is made for imperative languages
 
