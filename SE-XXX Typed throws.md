@@ -1062,6 +1062,12 @@ Consider important that the major side-effect regarding source compatibility is 
 
 ## Effect on ABI stability
 
+[swift/Mangling.rst at master · apple/swift](https://github.com/apple/swift/blob/master/docs/ABI/Mangling.rst)
+
+```
+function-signature ::= params-type params-type throws? throws-type?
+```
+
 No known effect.
 
 ## Effect on API resilience
