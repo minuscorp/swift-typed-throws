@@ -941,17 +941,6 @@ let f3: () throws BaseError -> Void = f2 // This will also be allowed, but just 
 let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any moment.
 ```
 
-### Type erasure
-
-Erasing an error type of a function that throws is easy as
-
-```swift
-catch {
-    // assume the error is inferred as `CatError`
-    let typeErasedError: Error = error
-}
-```
-
 ### `rethrow` (generic errors in map, filter, etc)
 
 While affecting to the `throws` keyword, we need to consider `rethrows` too when a type is present in the inner functions signature. Altough there is no impact over `rethrows`, as it propagates the throwing type from its inner block: 
@@ -1024,10 +1013,6 @@ func f<T>(_ t: () throws T -> Void) { print(T.self) }
 f({ throw E.failure }) // closure gets inferred to be `() throws E -> Void` so this will compile fine 
 // Prints: E.Type
 ```
-
-### Error structure
-
-As explained in [the rules](#the-grammar-rules): Everything that applies to the error type of `Result` also applies to error type of `throws`.
 
 ## Source compatibility
 
