@@ -559,7 +559,7 @@ init() throws CatError
 ### `catch`
 
 1. Throwing inside the `do` block using `throws` or a function that `throws` is handled the same regarding errors.
-2. A general `catch` clause always infers the `error` to `Swift.error`
+2. A general `catch` clause always infers the `error` as `Swift.Error`
 3. In general needless `catch` clauses are marked with warnings (prefering more specific ones to keep if there is a conflict between clauses).
 
 Alternative to consider:
@@ -599,7 +599,7 @@ do {
 do {
     let cat = try callCat()
 } catch error as CatError { // ensure `CatError` even if the API changes in the future
-    // error is inferred as `CatError`
+    // error is `CatError`
     // so this would compile
     let reason = error.reason
 }
@@ -611,7 +611,7 @@ No general catch clause needed. If there is one, compiler will show a warning (c
 
 ```swift
 // Assuming an enum `CatError`
-enum CatError {
+enum CatError: Error {
     case sleeps, sitsOnATree
 }
 
@@ -631,7 +631,7 @@ do {
     let cat = try callCat()
     throw CatError
 } catch error as CatError {
-    // error is inferred as `CatError`
+    // error is `CatError`
 }
 // this exhaustive
 ```
