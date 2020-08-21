@@ -57,14 +57,14 @@ func callSpouse() throws -> Spouse // but a `Spouse` can fail in many different 
 func callCat() throws -> Cat // `CatError` I guess
 
 func callFamily() throws -> Family {
-	let kids = try callKids()
-	let spouse = try callSpouse()
-	let cat = try callCat()
-	return Family(kids: kids, spouse: spouse, cat: cat)
+    let kids = try callKids()
+    let spouse = try callSpouse()
+    let cat = try callCat()
+    return Family(kids: kids, spouse: spouse, cat: cat)
 }
 ```
 
-As a user of `callFamily() throws` it gets a lot harder to understand, which errors can be thrown. Even if reading the functions implementation would be possible (which sometimes is not), than you are usally forced to read the whole implementation, collecting all uses of `try` and investigating the whole error flow dependencies of the sub program. Which almost nobody does, and the people that try often produce mistakes, because complexity quickly outgrows.
+As a user of `callFamily() throws` it gets a lot harder to understand, which errors can be thrown. Even if reading the functions implementation would be possible (which sometimes is not), then you are usally forced to read the whole implementation, collecting all uses of `try` and investigating the whole error flow dependencies of the sub program. Which almost nobody does, and the people that try often produce mistakes, because complexity quickly outgrows.
 
 ### Inconsistent explicitness compared to `Result` or `Future`
 
@@ -248,8 +248,6 @@ Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/b
 
 ## Proposed solution
 
-`// TODO: What should we put in here and what not?`
-
 > Describe your solution to the problem. Provide examples and describe how they work. Show how your solution is better than current workarounds: is it cleaner, safer, or more efficient?
 
 In general we want to add the possibility to use `throws` with a single, specific error.
@@ -300,7 +298,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
     } catch let error as CatError {
         return Result.failure(error)
     } catch {
-    	// this catch clause would become obsolete because the catch is already exhaustive
+        // this catch clause would become obsolete because the catch is already exhaustive
     }
 }
 ```
@@ -309,7 +307,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
 
 ```swift
 struct RequestCatError: Error {
-	case network, forbidden, notFound, internalServerError, unknown
+    case network, forbidden, notFound, internalServerError, unknown
 }
 
 func requestCat() throws RequestCatError -> Cat
@@ -351,7 +349,7 @@ do {
 }
 ```
 
-You can now update you catch clauses to make sure that you are aware of the new error cases and that you handle them properly.
+You can now update your `catch` clauses to make sure that you are aware of the new error cases and that you handle them properly.
 
 ### `throws` is made for imperative languages
 
@@ -427,78 +425,267 @@ https://forums.swift.org/t/typed-throw-functions/38860/122.
 
 ## Detailed design
 
-`// TODO: Decide what belongs here and what belongs into other sections`
+### Syntax
 
-> Describe the design of the solution in detail. If it involves new syntax in the language, show the additions and changes to the Swift grammar. If it's a new API, show the full API and its documentation comments detailing what it does. The detail in this section should be sufficient for someone who is not one of the authors to be able to reasonably implement the feature.
+We are referring to [Summary of the Grammar — The Swift Programming Language (Swift 5.3)](https://docs.swift.org/swift-book/ReferenceManual/zzSummaryOfTheGrammar.html).
 
-`// TODO: Motivation part is over, we should only speak about the solution`
-
-### Swift grammar additions/changes
-
-What this proposal is about is giving resilience and type safety to an area of the Swift language that lacks of it, ganing both in safety for the developer not just in type system but in terms of reducing the number of possible path error recovering that the developer might have to face when consuming an API.
-
-We define the proposed semantics represented as how the function would be mangled or just as a pseudocode:
+Adding
 
 ```
-function-signature ::= params-type params-type throws? throws-type?
+throws-clause -> throws type-identifier(opt)
 ```
 
-Which can be translated into a more Swift-related grammar in the former way:
+to the grammar.
+
+#### Function type
+
+Changing from
+
+```
+function-type → attributes(opt) function-type-argument-clause throws(opt) -> type
+```
+
+to
+
+```
+function-type → attributes(opt) function-type-argument-clause throws-clause(opt) -> type
+```
+
+Examples
 
 ```swift
-(func name | init)(params: params-type...) (throws throws-type?)? (-> return-type)?
+() -> Bool
+() throws -> Bool
+() throws CatError -> Bool
 ```
 
-Where, following our kitty example, we could write:
+#### Closure expression
 
-```swift
-// From:
-/// - throws: CatError
-func callCatOrThrow() throws -> Cat
+Changing from
 
-// To:
-func callCatOrThrow() throws CatError -> Cat
-
-// Being CatError:
-struct CatError: Swift.Error {}
+```
+closure-signature → capture-list(opt) closure-parameter-clause throws(opt) function-result opt in
 ```
 
-### The grammar rules
+to
 
-In the example above, despite being pretty simple, stablishes all the rules that applies to typed throwing functions:
+```
+closure-signature → capture-list(opt) closure-parameter-clause throws-clause(opt) function-result opt in
+```
 
-1. Any function or init method that is marked as `throws` can declare which type will be thrown from the function body.
-2. Just one type of error (if any), can be added to the function signature.
-3. The error **must** conform to `Swift.Error`, by inheritance or by direct conformation and follow the same rules that apply to the `throw` statement.
-
-Whith these three simple rules, we can elaborate a bit more in depth which are the implications of this:
+Examples
 
 ```swift
-import ExternalLibrary
+{ () -> Bool in true }
+{ () throws -> Bool in true }
+{ () throws CatError -> Bool in true }
+```
 
-// Given: 
-public func incrementNumberOfFilesOnDirectory(at path: String) throws ExternalError -> Int { ... }
 
-enum ExternalError: Error {
-    case pathNotFoundOrValid
-    case maximumNumberOfFilesReached
+#### Function declaration
+
+Changing from
+
+```
+function-signature → parameter-clause throws(opt) function-result(opt)
+```
+
+to
+
+```
+function-signature → parameter-clause throws-clause(opt) function-result(opt)
+```
+
+Examples
+
+```swift
+func callCat() -> Cat
+func callCat() throws -> Cat
+func callCat() throws CatError -> Cat
+```
+
+#### Protocol initializer declaration
+
+Changing from
+
+```
+protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt) generic-where-clause(opt)
+```
+
+to
+
+```
+protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt) generic-where-clause(opt)
+```
+
+Examples
+
+```swift
+init()
+init() throws
+init() throws CatError
+```
+
+#### Initializer declaration
+
+Changing from
+
+```
+initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt)
+```
+
+to
+
+```
+initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt)
+```
+
+Examples
+
+```swift
+init()
+init() throws
+init() throws CatError
+```
+
+### Verbal rules
+
+### `throws`
+
+1. Any function/method, (protocol) init method, closure or function type that is marked as `throws` can declare which type the function/method throws.
+2. At most one type of specific error can be used with a `throws`.
+3. The error **must** conform to `Swift.Error` by (transitive) conformation.
+
+### `catch`
+
+1. Throwing inside the `do` block using `throws` or a function that `throws` is handled the same regarding errors.
+2. A general `catch` clause always infers the `error` as `Swift.Error`
+3. In general needless `catch` clauses are marked with warnings (prefering more specific ones to keep if there is a conflict between clauses).
+
+Alternative to consider:
+
+> If all statements in the `do` block throw specific errors and there is a `catch` clause that does not match one of this errors, then a compiler error is generated.
+
+### Error scenarios considered
+
+Assuming the functions and errors
+
+```swift
+func callCat() throws CatError -> Cat
+func callKids() throws KidsError -> Kids
+
+struct CatError {
+    reason: String
 }
 
-// Then:
+struct KidsError {
+    reason: String
+}
+```
+
+#### Scenario 1: Specific thrown error, general catch clause
+
+```swift
 do {
-    let newNumberOfFiles = try ExternalUtility.incrementNumberOfFilesOnDirectory(at: path)
-} catch let error as ExternalError {
-    dump(error)
-    recoverFromLibraryError(error)
+    let cat = try callCat()
+} catch {
+    // error is inferred as `Swift.Error` to keep source compatibility
 }
 ```
 
-The most evident scenario for a do block with a single thrown error inside is that it is no longer needed to catch a certain type in the catch clauses, due to the fact that the generic catch clause will become strongly typed with the error type specified in the throwing function's signature.
+#### Scenario 2: Specific thrown error, specific catch clause
 
-This single simple scenario opens up to a whole family of possible scenarios that should be mentioned for the sake of clarity.
-In first place we will specify different examples where the Swift compiler interprets the new code and make decisions about the code in ways that it wasn't working before:
+```swift
+do {
+    let cat = try callCat()
+} catch error as CatError { // ensure `CatError` even if the API changes in the future
+    // error is `CatError`
+    // so this would compile
+    let reason = error.reason
+}
+```
 
-`// TODO: I think we should put that to the detailed solution part now`
+No general catch clause needed. If there is one, compiler will show a warning (comparable to `default` in `switch`).
+
+#### Scenario 3: Specific thrown error, multiple catch clauses for one enum
+
+```swift
+// Assuming an enum `CatError`
+enum CatError: Error {
+    case sleeps, sitsOnATree
+}
+
+do {
+    let cat = try callCat()
+} catch .sleeps { // Type inference makes the catch clause more dense
+    // handle error
+} catch .sitsOnATree {
+    // handle error
+}
+```
+
+#### Scenario 4: Multiple same specific thrown errors, specific catch clause
+
+```swift
+do {
+    let cat = try callCat()
+    throw CatError
+} catch error as CatError {
+    // error is `CatError`
+}
+// this exhaustive
+```
+
+#### Scenario 5: Multiple differing specific thrown errors, general catch clause
+
+```swift
+do {
+    let kids = try callKids()
+    let cat = try callCat()
+} catch {
+    // `error` is just the type erased `Swift.Error`
+    // because we can't auto generate KidsError | CatError
+    // and we want to keep source compatibility
+}
+```
+
+#### Scenario 6: Multiple differing specific thrown errors, multiple specific catch clauses
+
+```swift
+do {
+    let kids = try callKids()
+    let cat = try callCat()
+} catch error as CatError {
+    // `error` is `CatError`
+} catch error as KidsError {
+    // `error` is `KidsError `
+}
+```
+
+#### Scenario 7: Multiple specific thrown errors, specific and general catch clauses
+
+```swift
+do {
+    let kids = try callKids()
+    let cat = try callCat()
+} catch error as CatError {
+    // `error` is `CatError`
+} catch {
+    // `error` is `Swift.Error `
+}
+```
+
+#### Scenario 8: Unspecific thrown error
+
+- Current behaviour of Swift applies
+
+### Autocompletion
+
+Because we can't infer types in the general `catch` clause without breaking source compatibility, we are suggesting to use autocompletion while adding missing `catch` clauses. Only `catch` clauses that are missing from the current `do` statement are suggested (including the general `catch` clause).
+
+---
+
+`// TODO: Continue here`
 
 ### Reducing `catch` clause verbosity
 
@@ -586,104 +773,6 @@ These scenarios are uncommon but possible, also there's always room to `catch On
 
 This change in the expression is merely additive and has no impact on the current source.
 
-### Error scenarios considered
-
-#### Scenario 1: Specific thrown error, general catch clause
-
-```swift
-func callCat() throws CatError -> Cat
-
-struct CatError {
-    reason: String
-}
-
-do {
-    let cat = try callCat()
-} catch let error as CatError {
-    let reason = error.reason
-}
-```
-
-#### Scenario 2: Multiple specific thrown errors, general catch clauses
-
-`// TODO: Maybe this decision has ugly consequences for the future, if we want to improve type inference for the error`
-
-```swift
-func callKids() throws KidsError -> Kids
-func callCat() throws CatError -> Cat
-
-do {
-    let kids = try callKids()
-    let cat = try callCat()
-} catch {
-    // `error` is just `Swift.Error`
-}
-```
-
-This can be corrected by an autocompletion approach, giving the option to the developer to write down like:
-
-```swift
-catch error as KidsError { ... } // Autocompletion
-catch error as CatError { ... } // Autocompletion
-```
-
-Another example is a variant of the example above where you have already catched specifically one of the errors thrown:
-
-```swift
-catch error as KidsError { ... }
-catch { /* error is Error because the type cannot be inferred */ }
-```
-
-This scenarios, fill the gap about the boilerplate needed to write the needed code to catch different errors from a single `do` clause, where generating warnings or errors for autocompleting the missing `catch` cases would be too intrusive and even break source compatibility. With this autompletion rules, we scan the different errors being thrown and which ones are already catched in order to autocomplete the remaining cases only if the developer requires them.
-
-#### Scenario 3: Specific thrown error, specific catch clause
-
-```swift
-func callCat() throws CatError -> Cat
-
-struct CatError: Error {
-    let reason: String
-}
-
-do {
-    let cat = try callCat()
-} catch let error as CatError { 
-    let reason = error.reason
-}
-```
-
-No general catch clause needed. If there is one, compiler will show a warning or error.
-
-#### Scenario 4: Specific thrown error, multiple catch clauses
-
-```swift
-func callCat() throws CatError -> Cat
-
-enum CatError {
-    case sleeps, sitsOnATree
-}
-
-do {
-    let cat = try callCat()
-} catch .sleeps {
-    // handle error
-} catch .sitsOnATree {
-    // handle error
-}
-```
-
-#### Scenario 5: Unspecific thrown error
-
-- Current behaviour of Swift applies
-
-### Error structure
-
-Everything that applies to the error type of `Result` also applies to error type of `throws`. Mainly it needs to conform to `Swift.Error`.
-
-### Equivalence between `throws` and `Result`
-
-`// TODO: Explain motivation for another proposal and why we want to be compatible between throws and Result`
-
 ### Inheritance
 
 A typed `throws` function cannot throw other type unrelated (by inheritance). If this happens, a compilation error will be generated as in the following example:
@@ -715,34 +804,6 @@ catch let error as BaseError { /* error is BaseError */ }
 func baz() throws BaseError { throw ConcreteError() }
 do { try baz() }
 catch let error as BaseError { /* error is BaseError */ }
-```
-
-### Multiple throwing types in the same do statement
-
-A plain throwing function that throw different errors inside the same `do` statement are type-erased into the `catch` statement, being possible to (as of today), `catch` concrete errors and handle them if needed.
-
-```swift
-public func foo() throws { 
-  do {
-    try typedThrow1() // Throws OtherError
-    try typedThrow2() // Throws AnotherError
-  } catch {
-    dump(error) // Is casted to `Error`
-    throw Error // We throw the type-erased error as allowed by the function signature
-  }
-}
-```
-
-### Unrelated type casting
-
-A function that `throws` a typed error cannot be catched inside a `do` block using casting to other type unrelated to it, generating an error if occurred.
-
-```swift
-do {
-   try typedThrow() // Throws MyError
-} catch let error as NSError { // error: NSError cannot be casted to MyError
-   fatalError() 
-}
 ```
 
 ### Type inference
@@ -880,18 +941,7 @@ let f3: () throws BaseError -> Void = f2 // This will also be allowed, but just 
 let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any moment.
 ```
 
-### Type erasure
-
-Erasing an error type of a function that throws is easy as
-
-```swift
-catch {
-    // assume the error is inferred as `CatError`
-    let typeErasedError: Error = error
-}
-```
-
-### `rethrow` (generic errors in map, filter, etc)`
+### `rethrow` (generic errors in map, filter, etc)
 
 While affecting to the `throws` keyword, we need to consider `rethrows` too when a type is present in the inner functions signature. Altough there is no impact over `rethrows`, as it propagates the throwing type from its inner block: 
 
@@ -964,10 +1014,6 @@ f({ throw E.failure }) // closure gets inferred to be `() throws E -> Void` so t
 // Prints: E.Type
 ```
 
-### Error structure
-
-As explained in [the rules](#the-grammar-rules): Everything that applies to the error type of `Result` also applies to error type of `throws`.
-
 ## Source compatibility
 
 Being this change purely additive it would not affect on source compatibility.
@@ -1000,6 +1046,12 @@ So developers may have in consideration the addition of types to a plain throwin
 Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breaking any current behaviour related with the change.
 
 ## Effect on ABI stability
+
+[swift/Mangling.rst at master · apple/swift](https://github.com/apple/swift/blob/master/docs/ABI/Mangling.rst)
+
+```
+function-signature ::= params-type params-type throws? throws-type?
+```
 
 No known effect.
 
