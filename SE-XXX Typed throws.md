@@ -423,7 +423,7 @@ https://forums.swift.org/t/typed-throw-functions/38860/122.
 
 ## Detailed design
 
-### Syntax
+### Syntax adjustments
 
 We are referring to [Summary of the Grammar — The Swift Programming Language (Swift 5.3)](https://docs.swift.org/swift-book/ReferenceManual/zzSummaryOfTheGrammar.html).
 
@@ -546,7 +546,7 @@ init() throws
 init() throws CatError
 ```
 
-### Verbal rules
+### Rules for `throws` and `catch`
 
 #### `throws`
 
@@ -678,240 +678,6 @@ do {
 
 - Current behaviour of Swift applies
 
-### Autocompletion
-
-Because we can't infer types in the general `catch` clause without breaking source compatibility, we are suggesting to use autocompletion while adding missing `catch` clauses. Only `catch` clauses that are missing from the current `do` statement are suggested (including the general `catch` clause).
-
-### Converting between `throws` and `Result`
-
-Having a typed `throws` it would be quite convenient to not being forced to explicitly convert between `throws` and `Result`. Semantically `throws` could be just another syntax for `Result`, which would make both of them more composable.
-
-```swift
-func getCatOrThrow() throws CatError -> Cat
-func getCatResult() -> Result<Cat, CatError>
-```
-
-So it would be nice if we could
-
-```swift
-do {
-    let cat1: Cat = try getCatOrThrow() // works as always
-    let cat2: Cat = try getCatResult() // `try` will unwrap the `Result` by calling `Result.get()`
-    let catResult1: Result<Cat, CatError> = getCatResult()
-    let catResult2: Result<Cat, CatError> = getCatOrThrow() `throws` is interpreted as the corresponding `Result`
-    let cat3: Cat = getCatOrThrow().get() // same as `try getCatOrThrow()`
-} catch let error as CatError {
-    ...
-}
-```
-
-But from what we know, this was already discussed before and was rejected in favour of a performant `throws` implementation.
-
-But at least we recommend updating `Result`'s [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) from
-
-```swift
-init(catching body: () throws -> Success)
-```
-
-to
-
-```swift
-init(catching body: () throws Failure -> Success)
-```
-
-and `Result`'s [get()](https://developer.apple.com/documentation/swift/result/3139397-get) from
-
-```swift
-func get() throws -> Success
-```
-
-to
-
-```swift
-func get() throws Failure -> Success
-```
-
-### Library Evolution
-
-There are many concerns about library evolution and compatibility.
-
-#### Non `@frozen enum`s
-
-Our approach is quite similar to what happens with switch cases:
-
-```swift
-enum NonFrozenEnum: Error { case cold, warm, hot }
-
-func wheathersLike() throws NonFrozenEnum -> Weather
-
-try { wheathersLike() } 
-catch .cold { ... }
-catch .warm { ... }
-catch .hot { ... } // warning: all cases were catched but NonFrozenEnum might have additional unknown values.
-// So if the warning is resolved:
-catch let error as NonFrozenEnum { ... }
-```
-
-So it maintains backwards compatibility emiting a warning instead of an error. An error could be generated if this proposal doesn't need to keep backwards compatible with previous Swift versions.
-
-#### API Developer recommendations
-
-Assuming a current API
-
-```swift
-struct DataLoaderError {}
-
-protocol DataLoader {
-    func load throws DataLoaderError -> Data
-}
-```
-
-Here are some things to consider when developing an API with typed errors:
-
-- If you need to throw a new specific error, because you think your API user needs to know, that this specific error (e.g. `FileSystemError`) did happen, then it's a breaking change, because your API user may want to react to it in another way now.
-
-Changing 
-
-```swift
-struct DataLoaderError {
-    let message: String
-}
-```
-
-to
-
-```swift
-enum DataLoaderError {
-    case loadError(LoadError)
-    case fileSystemError(FileSystemError)
-}
-```
-
-- If you don't need to throw it, because you think your API user does not need to know this error, then you map it to the error that represents the `FileSystemError` (most of the time in a more abstract sense). In this example you would throw a `DataLoaderError` with another message.
-
-- If you think you don't know what will happen in the future and breaking changes should be avoided as much as possible, then just throw `Swift.Error`. But keep in mind that you are less explicit about what can happen and also take the possibility for the API user to rely on the existence of the error (by using the compiler) leading to issues mentioned in [Motivation](#motivation).
-
-- If you provide an extension point to your API like a protocol (e.g. a `DataLoader` like above) that can be used to customize the behaviour of your API, then try to omit forcing specific errors on the API user. Most of the time you as an extension point provider just want to know that something went wrong. If you need multiple cases of errors then keep the amount as small as possible and eventually do compatibility converting on the API developer side outside of the extension point implementation. "Only ask for what you need" applies here.
-
-### Optional Enhancement: Reducing `catch` clause verbosity
-
-`#openquestion`
-
-Because we now need to explicitly catch specific errors in `catch` clauses a lot, a shorter form is being suggested.
-Having to write `catch let error as FooError` seems a bit inconsistent with the rest of how `catch` works, as `error` is inferred to be a constant of type `Error` in the general `catch` clause without mentioning `let error`.
-
-
-```swift
-do { ... }
-// Here we have to explicitly declare `error` as a constant.
-catch let error as FooError { ... }
-// Whereas here you have `error` for free.
-catch { ... }
-```
-
-This inconsistency can induce confusion when writing down different specific and general `catch` clauses, having to declare `error` on your own in one case and omitting it in the other.
-
-For this the grammar would need an update in [catch-pattern](https://docs.swift.org/swift-book/ReferenceManual/Statements.html#grammar_catch-pattern) in the following way:
-
-
-```
-catch-pattern -> type-identifier
-```
-
-Example:
-
-```swift
-do {
-    ...
-} catch DogError {
-    // `error` is `DogError`
-}
-```
-
-This comes in handy with `class` and `struct` error types, but most of all with `enum` types.
-
-```swift
-enum SomeErrors: Error {
-    case foo, bar, baz
-}
-
-func theErrorMaker() throws SomeErrors
-
-do {
-    try theErrorMaker()
-}
-catch .foo { ... }
-catch .bar { ... }
-catch .baz { ... }
-```
-
-This behaviour and syntax in general resembles a lot how `switch` cases work because:
-
-1. The type can be ignored, as it is inferred.
-2. They must be exhaustive.
-
-In scenarios where different types are involved, each one has the same treatment from the grammar side:
-
-```swift
-
-do {
-    try throwsClass() // throws MyClass
-    try throwsStruct() // throws MyStruct
-    try throwsEnum() // throws MyEnum { case one, two }
-} 
-catch MyClass { ... }
-catch MyStruct { ... }
-catch .one { ... }
-catch .two { ... } 
-```
-
-And where multiple enums are being caught, it would be only needed to specify the type of those cases that were repeated in every enum.
-
-```swift
-enum One: Error { case one, two, three }
-enum Two: Error { case two, three, four }
-
-
-do { ... }
-catch .one { ... }
-catch One.two { ... } // Disambiguate the type.
-catch One.three { ... }
-catch Two.two { ... }
-catch Two.three { ... }
-catch .four { ... }
-```
-
-These scenarios are uncommon but possible, also there's always room to `catch One` and handle each case in a switch statement.
-
-
-This change in the expression is merely additive and has no impact on the current source.
-
-### Type inference for `enum`s
-
-A function that `throws` an `enum` based `Error` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
-
-```swift
-enum Foo: Error { case bar, baz }
-
-func fooThrower() throws Foo {
-    guard someCondition else {
-        throw .bar
-    }
-
-    guard someOtherCondition else {
-        throw .baz
-    }
-}
-```
-
-Assuming it is the only thrown error type in the `do` block, an `enum` based `Error` can have its cases catched, with each case having a separate `catch` clause. When catching cases the type of the `case` can be omitted, as it is inferred from the throwing function.
-
-```swift
-do { try fooThrower() }
-catch .bar { ... }
-catch .baz { ... }
-```
-
 ### `rethrows`
 
 The adjustments to `rethrows` differ depending on how many different errors are thrown by the typed `throws` of the inner functions.
@@ -964,6 +730,41 @@ func foo<E1, E2>(f: () throws E1 -> Void, g: () throws E2 -> Void) rethrows // t
 ```
 
 But for `rethrows` to work in this way, these `enum`s need to be part of the standard library. A downside to mention is, that an `ErrorUnion2` would not be apple to auto merge its cases into one, if the cases are of the same error type, where with sum types `A | A === A`.
+
+### Usage in Protocols
+
+We can define typed `throws` functions in protocols with specific error types that are visible to the caller
+
+```swift
+private struct PrivateCatError: Error {}
+public struct PublicCatError: Error {}
+
+protocol CatFeeder {
+    public func throwPrivateCatErrorOnly() throws -> CatStatus // compiles
+    public func throwPrivateCatErrorExplicitly() throws PrivateCatError -> CatStatus // won't compile 
+    public func throwPublicCatErrorExplicitly() throws PublicCatError -> CatStatus // compiles
+}
+```
+
+Or we can use `associatedtypes` that (implicitly) conform to `Swift.Error`.
+
+```swift
+protocol CatFeeder {
+    associatedtype CatError: Error // The explicit Error conformance can be omited if there's a consumer that defines the type as a thrown one.
+    
+    func feedCat() throws CatError -> CatStatus
+}
+```
+
+### Usage with generics
+
+Typed `throws` can be used in combination with generic functions by making the error type generic.
+
+```swift
+func foo<E>(e: E) throws E
+```
+
+`E` would be constrained to `Error`, because it is used in `throws`.
 
 ### Subtyping
 
@@ -1079,40 +880,239 @@ protocol ThrowingDeepBlueErrorError: ThrowingBlueError {
 }
 ```
 
-### Usage in Protocols
+### Type inference for `enum`s
 
-We can define typed `throws` functions in protocols with specific error types that are visible to the caller
+A function that `throws` an `enum` based `Error` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
 
 ```swift
-private struct PrivateCatError: Error {}
-public struct PublicCatError: Error {}
+enum Foo: Error { case bar, baz }
 
-protocol CatFeeder {
-    public func throwPrivateCatErrorOnly() throws -> CatStatus // compiles
-    public func throwPrivateCatErrorExplicitly() throws PrivateCatError -> CatStatus // won't compile 
-    public func throwPublicCatErrorExplicitly() throws PublicCatError -> CatStatus // compiles
+func fooThrower() throws Foo {
+    guard someCondition else {
+        throw .bar
+    }
+
+    guard someOtherCondition else {
+        throw .baz
+    }
 }
 ```
 
-Or we can use `associatedtypes` that (implicitly) conform to `Swift.Error`.
+Assuming it is the only thrown error type in the `do` block, an `enum` based `Error` can have its cases catched, with each case having a separate `catch` clause. When catching cases the type of the `case` can be omitted, as it is inferred from the throwing function.
 
 ```swift
-protocol CatFeeder {
-    associatedtype CatError: Error // The explicit Error conformance can be omited if there's a consumer that defines the type as a thrown one.
-    
-    func feedCat() throws CatError -> CatStatus
+do { try fooThrower() }
+catch .bar { ... }
+catch .baz { ... }
+```
+
+### Converting between `throws` and `Result`
+
+Having a typed `throws` it would be quite convenient to not being forced to explicitly convert between `throws` and `Result`. Semantically `throws` could be just another syntax for `Result`, which would make both of them more composable.
+
+```swift
+func getCatOrThrow() throws CatError -> Cat
+func getCatResult() -> Result<Cat, CatError>
+```
+
+So it would be nice if we could
+
+```swift
+do {
+    let cat1: Cat = try getCatOrThrow() // works as always
+    let cat2: Cat = try getCatResult() // `try` will unwrap the `Result` by calling `Result.get()`
+    let catResult1: Result<Cat, CatError> = getCatResult()
+    let catResult2: Result<Cat, CatError> = getCatOrThrow() `throws` is interpreted as the corresponding `Result`
+    let cat3: Cat = getCatOrThrow().get() // same as `try getCatOrThrow()`
+} catch let error as CatError {
+    ...
 }
 ```
 
-### Usage with generics
+But from what we know, this was already discussed before and was rejected in favour of a performant `throws` implementation.
 
-Typed `throws` can be used in combination with generic functions by making the error type generic.
+But at least we recommend updating `Result`'s [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) from
 
 ```swift
-func foo<E>(e: E) throws E
+init(catching body: () throws -> Success)
 ```
 
-`E` would be constrained to `Error`, because it is used in `throws`.
+to
+
+```swift
+init(catching body: () throws Failure -> Success)
+```
+
+and `Result`'s [get()](https://developer.apple.com/documentation/swift/result/3139397-get) from
+
+```swift
+func get() throws -> Success
+```
+
+to
+
+```swift
+func get() throws Failure -> Success
+```
+
+### Library Evolution
+
+There are many concerns about library evolution and compatibility.
+
+#### Non `@frozen enum`s
+
+Our approach is quite similar to what happens with switch cases:
+
+```swift
+enum NonFrozenEnum: Error { case cold, warm, hot }
+
+func wheathersLike() throws NonFrozenEnum -> Weather
+
+try { wheathersLike() } 
+catch .cold { ... }
+catch .warm { ... }
+catch .hot { ... } // warning: all cases were catched but NonFrozenEnum might have additional unknown values.
+// So if the warning is resolved:
+catch let error as NonFrozenEnum { ... }
+```
+
+So it maintains backwards compatibility emiting a warning instead of an error. An error could be generated if this proposal doesn't need to keep backwards compatible with previous Swift versions.
+
+#### API Developer recommendations
+
+Assuming a current API
+
+```swift
+struct DataLoaderError {}
+
+protocol DataLoader {
+    func load throws DataLoaderError -> Data
+}
+```
+
+Here are some things to consider when developing an API with typed errors:
+
+- If you need to throw a new specific error, because you think your API user needs to know, that this specific error (e.g. `FileSystemError`) did happen, then it's a breaking change, because your API user may want to react to it in another way now.
+
+Changing 
+
+```swift
+struct DataLoaderError {
+    let message: String
+}
+```
+
+to
+
+```swift
+enum DataLoaderError {
+    case loadError(LoadError)
+    case fileSystemError(FileSystemError)
+}
+```
+
+- If you don't need to throw it, because you think your API user does not need to know this error, then you map it to the error that represents the `FileSystemError` (most of the time in a more abstract sense). In this example you would throw a `DataLoaderError` with another message.
+
+- If you think you don't know what will happen in the future and breaking changes should be avoided as much as possible, then just throw `Swift.Error`. But keep in mind that you are less explicit about what can happen and also take the possibility for the API user to rely on the existence of the error (by using the compiler) leading to issues mentioned in [Motivation](#motivation).
+
+- If you provide an extension point to your API like a protocol (e.g. a `DataLoader` like above) that can be used to customize the behaviour of your API, then try to omit forcing specific errors on the API user. Most of the time you as an extension point provider just want to know that something went wrong. If you need multiple cases of errors then keep the amount as small as possible and eventually do compatibility converting on the API developer side outside of the extension point implementation. "Only ask for what you need" applies here.
+
+### Autocompletion
+
+Because we can't infer types in the general `catch` clause without breaking source compatibility, we are suggesting to use autocompletion while adding missing `catch` clauses. Only `catch` clauses that are missing from the current `do` statement are suggested (including the general `catch` clause).
+
+### Optional Enhancement: Reducing `catch` clause verbosity
+
+`#openquestion`
+
+Because we now need to explicitly catch specific errors in `catch` clauses a lot, a shorter form is being suggested.
+Having to write `catch let error as FooError` seems a bit inconsistent with the rest of how `catch` works, as `error` is inferred to be a constant of type `Error` in the general `catch` clause without mentioning `let error`.
+
+
+```swift
+do { ... }
+// Here we have to explicitly declare `error` as a constant.
+catch let error as FooError { ... }
+// Whereas here you have `error` for free.
+catch { ... }
+```
+
+This inconsistency can induce confusion when writing down different specific and general `catch` clauses, having to declare `error` on your own in one case and omitting it in the other.
+
+For this the grammar would need an update in [catch-pattern](https://docs.swift.org/swift-book/ReferenceManual/Statements.html#grammar_catch-pattern) in the following way:
+
+
+```
+catch-pattern -> type-identifier
+```
+
+Example:
+
+```swift
+do {
+    ...
+} catch DogError {
+    // `error` is `DogError`
+}
+```
+
+This comes in handy with `class` and `struct` error types, but most of all with `enum` types.
+
+```swift
+enum SomeErrors: Error {
+    case foo, bar, baz
+}
+
+func theErrorMaker() throws SomeErrors
+
+do {
+    try theErrorMaker()
+}
+catch .foo { ... }
+catch .bar { ... }
+catch .baz { ... }
+```
+
+This behaviour and syntax in general resembles a lot how `switch` cases work because:
+
+1. The type can be ignored, as it is inferred.
+2. They must be exhaustive.
+
+In scenarios where different types are involved, each one has the same treatment from the grammar side:
+
+```swift
+
+do {
+    try throwsClass() // throws MyClass
+    try throwsStruct() // throws MyStruct
+    try throwsEnum() // throws MyEnum { case one, two }
+} 
+catch MyClass { ... }
+catch MyStruct { ... }
+catch .one { ... }
+catch .two { ... } 
+```
+
+And where multiple enums are being caught, it would be only needed to specify the type of those cases that were repeated in every enum.
+
+```swift
+enum One: Error { case one, two, three }
+enum Two: Error { case two, three, four }
+
+
+do { ... }
+catch .one { ... }
+catch One.two { ... } // Disambiguate the type.
+catch One.three { ... }
+catch Two.two { ... }
+catch Two.three { ... }
+catch .four { ... }
+```
+
+These scenarios are uncommon but possible, also there's always room to `catch One` and handle each case in a switch statement.
+
+
+This change in the expression is merely additive and has no impact on the current source.
 
 ## Source compatibility
 
