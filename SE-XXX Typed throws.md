@@ -720,7 +720,7 @@ to
 init(catching body: () throws Failure -> Success)
 ```
 
-### API Evolution
+### Library Evolution
 
 There are many concerns about library evolution and compatibility.
 
