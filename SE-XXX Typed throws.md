@@ -559,7 +559,7 @@ init() throws CatError
 
 1. Throwing inside the `do` block using `throws` or a function that `throws` is handled the same regarding errors.
 2. A general `catch` clause always infers the `error` as `Swift.Error`
-3. `#openquestion` In general needless `catch` clauses are marked with warnings (prefering more specific ones to keep if there is a conflict between clauses). But it should be discussed for which scenarios we can apply these, because it's not easy do decide this for non trivial `catch` clauses or error type hierachies.
+3. `#openquestion` In general needless `catch` clauses are marked with warnings (prefering more specific ones to keep if there is a conflict between clauses). But it should be discussed for which scenarios we can apply these, because it's not easy do decide this for non trivial `catch` clauses or error type hierarchies.
 
 `#openquestion` Alternative to consider:
 
