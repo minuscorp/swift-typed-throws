@@ -751,7 +751,7 @@ Assuming a current API
 struct DataLoaderError {}
 
 protocol DataLoader {
-    load throws DataLoaderError -> Data
+    func load throws DataLoaderError -> Data
 }
 ```
 
