@@ -1,7 +1,7 @@
 # Typed throws
 
 * Proposal: [SE-NNNN](NNNN-filename.md)
-* Authors: [Jorge (@minuscorp)](https://github.com/minuscorp), [Torsten Lehmann](https://github.com/torstenlehmann)
+* Authors: [Jorge Revuelta (@minuscorp)](https://github.com/minuscorp), [Torsten Lehmann](https://github.com/torstenlehmann)
 * Review Manager: TBD
 * Status: **Proposed**
 
