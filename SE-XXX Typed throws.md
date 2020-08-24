@@ -248,8 +248,6 @@ Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/b
 
 ## Proposed solution
 
-> Describe your solution to the problem. Provide examples and describe how they work. Show how your solution is better than current workarounds: is it cleaner, safer, or more efficient?
-
 In general we want to add the possibility to use `throws` with a single, specific error.
 
 ```swift
@@ -425,7 +423,7 @@ https://forums.swift.org/t/typed-throw-functions/38860/122.
 
 ## Detailed design
 
-### Syntax
+### Syntax adjustments
 
 We are referring to [Summary of the Grammar — The Swift Programming Language (Swift 5.3)](https://docs.swift.org/swift-book/ReferenceManual/zzSummaryOfTheGrammar.html).
 
@@ -548,21 +546,22 @@ init() throws
 init() throws CatError
 ```
 
-### Verbal rules
+### Rules for `throws` and `catch`
 
-### `throws`
+#### `throws`
 
 1. Any function/method, (protocol) init method, closure or function type that is marked as `throws` can declare which type the function/method throws.
 2. At most one type of specific error can be used with a `throws`.
 3. The error **must** conform to `Swift.Error` by (transitive) conformation.
+4. An error thrown from the function's body has to be compatible with the thrown error of the function's signature.
 
-### `catch`
+#### `catch`
 
 1. Throwing inside the `do` block using `throws` or a function that `throws` is handled the same regarding errors.
 2. A general `catch` clause always infers the `error` as `Swift.Error`
-3. In general needless `catch` clauses are marked with warnings (prefering more specific ones to keep if there is a conflict between clauses).
+3. `#openquestion` In general needless `catch` clauses are marked with warnings (prefering more specific ones to keep if there is a conflict between clauses). But it should be discussed for which scenarios we can apply these, because it's not easy do decide this for non trivial `catch` clauses or error type hierarchies.
 
-Alternative to consider:
+`#openquestion` Alternative to consider:
 
 > If all statements in the `do` block throw specific errors and there is a `catch` clause that does not match one of this errors, then a compiler error is generated.
 
@@ -598,7 +597,7 @@ do {
 ```swift
 do {
     let cat = try callCat()
-} catch error as CatError { // ensure `CatError` even if the API changes in the future
+} catch let error as CatError { // ensure `CatError` even if the API changes in the future
     // error is `CatError`
     // so this would compile
     let reason = error.reason
@@ -630,10 +629,10 @@ do {
 do {
     let cat = try callCat()
     throw CatError
-} catch error as CatError {
+} catch let error as CatError {
     // error is `CatError`
 }
-// this exhaustive
+// this is exhaustive
 ```
 
 #### Scenario 5: Multiple differing specific thrown errors, general catch clause
@@ -655,9 +654,9 @@ do {
 do {
     let kids = try callKids()
     let cat = try callCat()
-} catch error as CatError {
+} catch let error as CatError {
     // `error` is `CatError`
-} catch error as KidsError {
+} catch let error as KidsError {
     // `error` is `KidsError `
 }
 ```
@@ -668,7 +667,7 @@ do {
 do {
     let kids = try callKids()
     let cat = try callCat()
-} catch error as CatError {
+} catch let error as CatError {
     // `error` is `CatError`
 } catch {
     // `error` is `Swift.Error `
@@ -679,9 +678,233 @@ do {
 
 - Current behaviour of Swift applies
 
-### Autocompletion
+### `rethrows`
 
-Because we can't infer types in the general `catch` clause without breaking source compatibility, we are suggesting to use autocompletion while adding missing `catch` clauses. Only `catch` clauses that are missing from the current `do` statement are suggested (including the general `catch` clause).
+The adjustments to `rethrows` differ depending on how many different errors are thrown by the typed `throws` of the inner functions.
+
+With **no** error being thrown by the inner functions `rethrows` also does not throw an error.
+
+If there is **one** error of type `E` `rethrows` will also throw `E`.
+
+```swift
+func foo<E>(closure: () throws E -> Void) rethrows // throws E
+```
+
+In the example above there's no need to constraint `E: Error`, as any other kind of object that does not conform to `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So the set of functions in the Standard Library (`map`, `flatMap`, `compactMap` etc.) that support `rethrows`, can be advanced to their error typed versions just by modifying the signature like
+
+```swift
+// current
+func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
+
+// updated to
+func map<T, E>(_ transform: (Element) throws E -> T) rethrows -> [T]
+```
+
+If there are only **multiple errors of the same type** `rethrows` throws an error of the same type.
+
+```swift
+func foo<E>(f: () throws E -> Void, g: () throws E -> Void) rethrows // throws E
+```
+
+If there are **multiple differing errors** `rethrows` just throws `Error`.
+
+```swift
+func foo<E1, E2>(f: () throws E1 -> Void, g: () throws E2 -> Void) rethrows // throws Error
+```
+
+Because information loss will happen by falling back to `Error` this solution is far from ideal, because keeping type information on errors is the whole point of the proposal.
+
+(Theoretical) Alternatives for rethrowing **multiple differing errors**:
+
+- infer the closest common base type (which seems to be hard, because as to commenters in the forum type relation information seems to be missing in the runtime, however information loss on thrown error types will happen too)
+- **Not for discussion of this proposal:** sum types like `A | B` which were discussed and rejected in the past (see [swift-evolution/xxxx-union-type.md](https://github.com/frogcjn/swift-evolution/blob/master/proposals/xxxx-union-type.md))
+- use some replica sum type `enum` like
+
+```swift
+enum ErrorUnion2<E1: Error, E2: Error>: Error {
+    case first(E1)
+    case second(E2)
+}
+
+func foo<E1, E2>(f: () throws E1 -> Void, g: () throws E2 -> Void) rethrows // throws ErrorUnion2<E, E2> -> Void
+```
+
+But for `rethrows` to work in this way, these `enum`s need to be part of the standard library. A downside to mention is, that an `ErrorUnion2` would not be apple to auto merge its cases into one, if the cases are of the same error type, where with sum types `A | A === A`.
+
+### Usage in Protocols
+
+We can define typed `throws` functions in protocols with specific error types that are visible to the caller
+
+```swift
+private struct PrivateCatError: Error {}
+public struct PublicCatError: Error {}
+
+protocol CatFeeder {
+    public func throwPrivateCatErrorOnly() throws -> CatStatus // compiles
+    public func throwPrivateCatErrorExplicitly() throws PrivateCatError -> CatStatus // won't compile 
+    public func throwPublicCatErrorExplicitly() throws PublicCatError -> CatStatus // compiles
+}
+```
+
+Or we can use `associatedtypes` that (implicitly) conform to `Swift.Error`.
+
+```swift
+protocol CatFeeder {
+    associatedtype CatError: Error // The explicit Error conformance can be omited if there's a consumer that defines the type as a thrown one.
+    
+    func feedCat() throws CatError -> CatStatus
+}
+```
+
+### Usage with generics
+
+Typed `throws` can be used in combination with generic functions by making the error type generic.
+
+```swift
+func foo<E>(e: E) throws E
+```
+
+`E` would be constrained to `Error`, because it is used in `throws`.
+
+### Subtyping
+
+#### Between functions
+
+Having related errors and a non-throwing function
+
+```swift
+class BaseError: Error {}
+class SubError: BaseError {}
+
+let f1: () -> Void
+```
+
+Converting a non-throwing function to a throwing one is allowed
+
+```swift
+let f2: () throws SubError -> Void = f1
+```
+
+It's also allowed to assign a subtype of a thrown error, though the subtype information is erased and the error of f2 will be casted up.
+
+```swift
+let f3: () throws BaseError -> Void = f2
+```
+
+Erasing the specific error type is possible
+
+```swift
+let f4: () throws -> Void = f3
+```
+
+In general (assuming function parameters and return type are compatible):
+
+- `() -> Void` is subtype of `() throws B -> Void`
+- `() throws B -> Void` is subtype of `() throws -> Void`
+- `() throws B -> Void` is subtype of `() throws A -> Void` if `B` is subtype of `A`
+
+`#openquestion` For the semantic analysis it was suggested that every function is interpreted as a throwing function leading to this equivalences
+
+```swift
+() -> Void === () throws Never -> Void
+() throws -> Void === () throws Error -> Void
+```
+
+But it should be discussed if these equivalences should become part of the syntax.
+
+#### Catching errors that are subtypes
+
+Following the current behaviour of `catch` clauses the first clause that matches is chosen.
+
+```swift
+class BaseError: Error {}
+class SpecificError: BaseError {}
+
+func throwBase() throws {
+    throw SpecificError()
+}
+
+do {
+    try throwBase()
+} catch let error as SpecificError {
+    print("specific") // uses this clause
+} catch let error as BaseError {
+    print("base")
+}
+
+do {
+    try throwBase()
+} catch let error as BaseError {
+    print("base") // uses this clause
+} catch let error as SpecificError {
+    print("specific")
+}
+```
+
+#### Protocol refinements
+
+Protocols should have the possibility to conform and refine other protocols containing throwing functions based on the subtype relationship of their functions. This way it would be possible to throw a more specialised error or don't throw an error at all.
+
+Examples from https://forums.swift.org/t/typed-throw-functions/38860/223
+
+```swift
+protocol Throwing {
+    func f() throws
+}
+
+protocol NotThrowing: Throwing {
+    // A non-throwing refinement of the method
+    // declared by the parent protocol.
+    func f()
+}
+```
+
+```swift
+protocol ColoredError: Error { }
+class BlueError: ColoredError { }
+class DeepBlueError: BlueError { }
+
+protocol ThrowingColoredError: Throwing {
+    // Refinement
+    func f() throws ColoredError
+}
+
+protocol ThrowingBlueError: ThrowingColoredError {
+    // Refinement
+    func f() throws BlueError
+}
+
+protocol ThrowingDeepBlueErrorError: ThrowingBlueError {
+    // Refinement
+    func f() throws DeepBlueError
+}
+```
+
+### Type inference for `enum`s
+
+A function that `throws` an `enum` based `Error` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
+
+```swift
+enum Foo: Error { case bar, baz }
+
+func fooThrower() throws Foo {
+    guard someCondition else {
+        throw .bar
+    }
+
+    guard someOtherCondition else {
+        throw .baz
+    }
+}
+```
+
+Assuming it is the only thrown error type in the `do` block, an `enum` based `Error` can have its cases catched, with each case having a separate `catch` clause. When catching cases the type of the `case` can be omitted, as it is inferred from the throwing function.
+
+```swift
+do { try fooThrower() }
+catch .bar { ... }
+catch .baz { ... }
+```
 
 ### Converting between `throws` and `Result`
 
@@ -718,6 +941,18 @@ to
 
 ```swift
 init(catching body: () throws Failure -> Success)
+```
+
+and `Result`'s [get()](https://developer.apple.com/documentation/swift/result/3139397-get) from
+
+```swift
+func get() throws -> Success
+```
+
+to
+
+```swift
+func get() throws Failure -> Success
 ```
 
 ### Library Evolution
@@ -757,7 +992,9 @@ protocol DataLoader {
 
 Here are some things to consider when developing an API with typed errors:
 
-- If you need to throw a new specific error, because you think your API user needs to know, that this specific error (e.g. `FileSystemError`) did happen, then it's a breaking change, because your API user may want to react to it in another way now. Changing 
+- If you need to throw a new specific error, because you think your API user needs to know, that this specific error (e.g. `FileSystemError`) did happen, then it's a breaking change, because your API user may want to react to it in another way now.
+
+Changing 
 
 ```swift
 struct DataLoaderError {
@@ -780,7 +1017,13 @@ enum DataLoaderError {
 
 - If you provide an extension point to your API like a protocol (e.g. a `DataLoader` like above) that can be used to customize the behaviour of your API, then try to omit forcing specific errors on the API user. Most of the time you as an extension point provider just want to know that something went wrong. If you need multiple cases of errors then keep the amount as small as possible and eventually do compatibility converting on the API developer side outside of the extension point implementation. "Only ask for what you need" applies here.
 
+### Autocompletion
+
+Because we can't infer types in the general `catch` clause without breaking source compatibility, we are suggesting to use autocompletion while adding missing `catch` clauses. Only `catch` clauses that are missing from the current `do` statement are suggested (including the general `catch` clause).
+
 ### Optional Enhancement: Reducing `catch` clause verbosity
+
+`#openquestion`
 
 Because we now need to explicitly catch specific errors in `catch` clauses a lot, a shorter form is being suggested.
 Having to write `catch let error as FooError` seems a bit inconsistent with the rest of how `catch` works, as `error` is inferred to be a constant of type `Error` in the general `catch` clause without mentioning `let error`.
@@ -871,250 +1114,46 @@ These scenarios are uncommon but possible, also there's always room to `catch On
 
 This change in the expression is merely additive and has no impact on the current source.
 
----
-
-`// TODO: Continue here`
-
-### Type relations
-
-
-
-// non throwing function as subtype of throwing function
-// throws === throws Error
-// non throwing === throws Never?
-
-
-
-
-In terms of subtyping, we're respecting the current model, so:
-
-```swift
-class BaseError: Error {}
-class SubError: BaseError {}
-
-let f1: () -> Void = { ... }
-let f2: () throws SubError -> Void = f1 // Converting a non-throwing function to a throwing one is allowed.
-let f3: () throws BaseError -> Void = f2 // This will also be allowed, but just with the BaseError features, it'll be casted down.
-let f4: () throws -> Void = f3 // Erase the throwing type is allowed at any moment.
-```
-
-
-### Inheritance
-
-A typed `throws` function cannot throw other type unrelated (by inheritance). If this happens, a compilation error will be generated as in the following example:
-
-```swift
-public func foo() throws MyError {
-    throw OtherError.baz // error: OtherError cannot be casted to MyError.
-}
-
-public func foo() throws MyError {
-  do {
-    try typedThrow() // Throws OtherError inside a do statement there're no restrictions about the throwing type.
-  } catch {
-    throw MyError.baz 
-  }
-}
-```
-
-Whether the following example is totally valid, where the general `catch` statement casts the `Error` being thrown from the function to the one stablished by the signature, although it does not generate any compile error or warning:
-
-```swift
-class BaseError: Error { init() { ... } }
-class ConcreteError: BaseError { }
-
-func foo() throws BaseError { throw BaseError() }
-do { try foo() }
-catch let error as BaseError { /* error is BaseError */ }
-
-func baz() throws BaseError { throw ConcreteError() }
-do { try baz() }
-catch let error as BaseError { /* error is BaseError */ }
-```
-
-### Type inference
-
-1. A function that `throws` an `enum` based `Error` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
-
-```swift
-enum Foo: Error { case bar, baz }
-
-func fooThrower() throws Foo {
-    guard someCondition else {
-        throw .bar
-    }
-
-    guard someOtherCondition else {
-        throw .baz
-    }
-}
-```
-
-2. Assuming it is the only thrown error type in the `do` block, an `enum` based `Error` thrown by a typed throws can have its cases catched, with each case having a separate catch clause. When catching cases the type of the `case` can be omitted, as it is inferred from the throwing function.
-
-```swift
-do { try fooThrower() }
-catch .bar { ... }
-catch .baz { ... }
-```
-
-### Protocols
-
-When protocols are involved, we can define naturally typed `throws` functions using global or `associatedtypes` that conform to `Swift.Error`.
-
-```swift
-protocol CatProtocol {
-    associatedtype CatError: Error // The explicit Error conformance could be ommited if there's a consumer that define the type as a throwing one.
-    
-    func feedCat() throws CatError -> CatStatus
-}
-```
-
-The protocol function with typed `throws` are not restricted to `associatedtype`s and any error being valid in any of the cases above is valid too, doesn't matter the origin of it as far as it satisfies the current visibility restrictions regarding parameters in a function:
-
-```swift
-private struct CatError: Error {}
-
-public func feedCat() throws CatError -> CatStatus // error: feedCat cannot be declared public because its parameter uses a private type.
-
-// But:
-public func feedCat() throws -> CatStatus // Only throws CatError
-// Does not generate any compiler warning nor error.
-```
-
-
-> // TODO: Where to put this?
-
-And where we avoid dead code:
-
-```swift
-do { 
-    try untypedThrow() 
-} catch let error as TestError {
-  // error is `TestError`
-} catch { /* dead code */ }
-
-do { try untypedThrow() }
-catch {
-  let error = error as! TestError
-  // error is `TestError`
-}
-
-// good
-do { try typedThrow() }
-catch {
-  // error is `TestError`
-}
-```
-
-
-
-
-### `rethrow` (generic errors in map, filter, etc)
-
-While affecting to the `throws` keyword, we need to consider `rethrows` too when a type is present in the inner functions signature. Altough there is no impact over `rethrows`, as it propagates the throwing type from its inner block: 
-
-
-```swift
-func foo<T>(_ block: () throws T -> Void) rethrows
-```
-
-In the example above there's no need to constraint `T: Error`, as any other kind of object that does not conform to `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So the set of functions in the Standard Library (`map`, `flatMap`, `compactMap`, etc.) that support `rethrows`, can be advanced to their error typed versions just modifying the signature, as for example:
-
-
-```swift
-// current one:
-func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
-
-// added one:
-func map<T, E>(_ transform: (Element) throws E -> T) rethrows -> [T]
-```
-
-### Generics
-
-There's room also for generic errors, where automatically are constrained to `Error`, but the developer can constraint them to more specific errors to generate more fine-grained error throwing thanks to inheritance.
-
-```swift
-protocol BaseError: Error {
-    var underlyingReason: String { get }
-}
-
-protocol ConcreteError: BaseError {}
-
-enum DomainError: ConcreteError {
-    case foo
-    
-    var underlyingReason: String {
-        var description = ""
-        dump(error, to: &description)
-        return description
-    }
-}
-
-struct OneError: BaseError {
-    var underlyingReason: String {
-        "foo"
-    }
-}
-
-func foo<T: BaseError>() throws T { ... }
-
-// The generic gets resolved as `OneError` which implements `BaseError`, 
-// function signature changes to `foo() throws OneError`.
-do { try foo(OneError()) }
-catch let error as OneError { /* error is `OneError` */ }
-
-// The generic gets resolved as `DomainError` which implements `ConcreteError` which implements `BaseError`,
-// function signature changes to `foo() throws DomainError
-do { try foo(DomainError.foo) }
-catch let error as DomainError { /* error is `DomainError` */ }
-```
-
-There has to be noted that there's a difference between the rules that apply to generics in Swift nowadays besides what is being proposed because there's a restriction where you cannot declare a generic which type is not used in the function signature, that applies even to the return type of the method if it has not been used in the parameter list before. This rule does not apply in typed `throws`, where you can specify a generic that is being only used as constraint for the throwing type and not in the function signature itself. This generic acts as if it were a common generic and can be used in the function body or even in the return type or in the parameter list as long as the rules that apply to the proposal are satisfied.
-
-[Type inference](#type-inference), a topic that has been already discussed, has its place when generics are involved and, where more power to the type system they provide. This allows us to write code like the following without any compromise.
-
-```swift
-enum E: Error { case failure }
-
-func f<T>(_ t: () throws T -> Void) { print(T.self) }
-
-f({ throw E.failure }) // closure gets inferred to be `() throws E -> Void` so this will compile fine 
-// Prints: E.Type
-```
-
-
-
 ## Source compatibility
 
-Being this change purely additive it would not affect on source compatibility.
-Nevertheless, warnings might be produced in different scenarios like the examine below.
-
-For instance, consider this function:
+We decided to keep the inference behaviour of the general `catch` clause (`error: Error`) to keep source compatibility. But if breaking source compatibility is an option, we could change this
 
 ```swift
-func fooThrower() throws
+do {
+    let cat = try callCat() // throws `CatError`
+    throw CatError
+} catch let error as CatError {
+    // error is `CatError`
+}
+// this is exhaustive
 ```
 
-Are we allowed to change it to the following - while remaining source compatible?
+to this
 
 ```swift
-func fooThrower() throws Foo
+do {
+    let cat = try callCat() // throws `CatError`
+    throw CatError
+} catch {
+    // error is inferred as `CatError`
+}
+// this is exhaustive
 ```
 
-At first sight it shouldn't be a breaking change, since the equivalence between `Error` and `Foo` is evident.
-
-But given the following client code:
+There is a scenario, that potentially breaks source compatibility (original post: https://forums.swift.org/t/typed-throw-functions/38860/178):
 
 ```swift
-do { try fooThrower() }
-catch let error as Foo { ... }
+struct Foo: Error { ... }
+struct Bar: Error { ... }
+var throwers = [{ throw Foo() }] // Inferred as `Array<() throws -> ()>`, or `Array<() throws Foo -> ()>`?
+throwers.append({ throw Bar() }) // Compiles today, error if we infer `throws Foo`
 ```
 
-Which means that by changing to the latter function clients rebuilding will get a warning (saying that error is `Foo`).
-So developers may have in consideration the addition of types to a plain throwing functions and deide whether the change will affect negatively in the client's code.
+The combination of type inference and `throw` can lead to trouble, because with more specific error types supported for throwing statements, the inferred type needs to change to the more specific type. At least this would be the intuitive behaviour.
 
-Consider important that the major side-effect regarding source compatibility is the addition of warnings on some specific scenarios like the represented above, which means that the code will remain executing the same way as before and hence don't breaking any current behaviour related with the change.
+Another example would be updating Result's [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) and [get()](https://developer.apple.com/documentation/swift/result/3139397-get).
+
+**In general: All locations where an error will be inferred or updated to a more specific error can cause trouble with source compatibility.**
 
 ## Effect on ABI stability
 
@@ -1124,12 +1163,12 @@ Consider important that the major side-effect regarding source compatibility is 
 function-signature ::= params-type params-type throws? throws-type?
 ```
 
-No known effect.
+`#openquestion` Any insights are appreciated.
 
 ## Effect on API resilience
 
-No known effect.
+`#openquestion` Any insights are appreciated.
 
 ## Alternatives considered
 
-Remove the new `catch-Type` pattern from the proposal. 
+See [Motivation](#motivation)
