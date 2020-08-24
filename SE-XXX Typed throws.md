@@ -435,115 +435,26 @@ throws-clause -> throws type-identifier(opt)
 
 to the grammar.
 
-#### Function type
+#### Changes to grammar
 
-Changing from
+Changing from:
 
 ```
 function-type → attributes(opt) function-type-argument-clause throws(opt) -> type
-```
-
-to
-
-```
-function-type → attributes(opt) function-type-argument-clause throws-clause(opt) -> type
-```
-
-Examples
-
-```swift
-() -> Bool
-() throws -> Bool
-() throws CatError -> Bool
-```
-
-#### Closure expression
-
-Changing from
-
-```
 closure-signature → capture-list(opt) closure-parameter-clause throws(opt) function-result opt in
-```
-
-to
-
-```
-closure-signature → capture-list(opt) closure-parameter-clause throws-clause(opt) function-result opt in
-```
-
-Examples
-
-```swift
-{ () -> Bool in true }
-{ () throws -> Bool in true }
-{ () throws CatError -> Bool in true }
-```
-
-
-#### Function declaration
-
-Changing from
-
-```
 function-signature → parameter-clause throws(opt) function-result(opt)
-```
-
-to
-
-```
-function-signature → parameter-clause throws-clause(opt) function-result(opt)
-```
-
-Examples
-
-```swift
-func callCat() -> Cat
-func callCat() throws -> Cat
-func callCat() throws CatError -> Cat
-```
-
-#### Protocol initializer declaration
-
-Changing from
-
-```
 protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt) generic-where-clause(opt)
-```
-
-to
-
-```
-protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt) generic-where-clause(opt)
-```
-
-Examples
-
-```swift
-init()
-init() throws
-init() throws CatError
-```
-
-#### Initializer declaration
-
-Changing from
-
-```
 initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt)
 ```
 
-to
+to:
 
 ```
+function-type → attributes(opt) function-type-argument-clause throws-clause(opt) -> type
+closure-signature → capture-list(opt) closure-parameter-clause throws-clause(opt) function-result opt in
+function-signature → parameter-clause throws-clause(opt) function-result(opt)
+protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt) generic-where-clause(opt)
 initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt)
-```
-
-Examples
-
-```swift
-init()
-init() throws
-init() throws CatError
 ```
 
 ### Rules for `throws` and `catch`
