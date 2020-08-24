@@ -701,8 +701,8 @@ func bar(closure1: () throws -> Void, closure2: () throws -> Void) rethrows
 That stablishes the following rules:
 
 1. If no closure throws, bar does not throw,
-2. If all throwing closures are typed-throw with the same error type E, foo2 throws E,
-3. If throwing closures throw different error types, or some closures throw untyped errors, foo2 throws an untyped error (`Error`).
+2. If all throwing closures are typed-throw with the same error type `E`, **bar** throws `E`,
+3. If throwing closures throw different error types, or some closures throw untyped errors, **bar** throws an untyped error (`Error`).
 
 Those rules are extended to the usage of generics as follows:
 
