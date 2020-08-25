@@ -4,7 +4,7 @@
 
 Options we have developing the language while keeping compatibility: https://forums.swift.org/t/typed-throws/39660/66
 
-So it seems there is not law that forbids *thinking* about small source adjustments. ;)
+So it seems there is no law that forbids *thinking* about small source adjustments. ;)
 
 ## `rethrows`
 
@@ -59,7 +59,7 @@ see https://forums.swift.org/t/typed-throws/39660/73
 
 ### Issue
 
-```
+```swift
 struct Foo: Error { ... }
 struct Bar: Error { ... }
 var throwers = [{ throw Foo() }] // Inferred as `Array<() throws -> ()>`, or `Array<() throws Foo -> ()>`?
