@@ -27,6 +27,26 @@ see https://forums.swift.org/t/typed-throws/39660/53
 
 ### Solution 1
 
+rethrow without converting (compatible to current)
+
+```swift
+func foo(_ bar: () throws /* Error */ -> ()) rethrows /* Error */ {
+    try bar()
+}
+```
+
+rethrow with converting (compatible to current)
+
+```swift
+func foo(_ bar: () throws /* Error */ -> ()) rethrows /* Error */ {
+    do {
+        try bar()
+    } catch {
+        throw CustomError(base: error)
+    }
+}
+```
+
 rethrow without converting
 
 ```swift
