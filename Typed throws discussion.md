@@ -75,6 +75,21 @@ func foo<E>(_ bar: () throws E -> ()) rethrows CustomError {
 
 see https://forums.swift.org/t/typed-throws/39660/73
 
+Example combinations:
+
+```
+func foo(closure: () throws -> ()) rethrows
+func foo(closure: () throws -> ()) rethrows IntError
+func foo(closure: () throws SomeError -> ()) rethrows
+func foo(closure: () throws SomeError -> ()) rethrows IntError
+func foo<E: Error>(closure: () throws E -> ()) rethrows E
+```
+
+In general:
+
+- `rethrows T`: Throw `T` if parameter throws
+- `rethrows === (rethrows T where T === Error)`: Throw `Error` if parameter throws
+
 ## `throw` and type inference
 
 ### Issue
