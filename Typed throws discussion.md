@@ -126,3 +126,9 @@ foo({ throws Foo.error }) // inferred as '() throws Foo -> ()'
 > It also seems fairly likely to me that the source break wouldn't be that large (unless there's a more common use-case I haven't thought of?). It might make sense to tighten up the inference behavior as a change in Swift 6, where the Swift 5 compatibility mode would continue to infer the throws type as Error.
 
 see https://forums.swift.org/t/typed-throws/39660/77
+
+### Solution 4
+
+> I guess the cleanest non source compat solution would be, if we could update source in Swift 6 from `throw FooError()` to `throw FooError() as Error` for all `throw` that happen directly in a `do` block or in closure that has it's type inferred.
+
+see https://forums.swift.org/t/typed-throws/39660/123?
