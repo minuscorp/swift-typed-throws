@@ -435,115 +435,26 @@ throws-clause -> throws type-identifier(opt)
 
 to the grammar.
 
-#### Function type
+#### Changes to grammar
 
-Changing from
+Changing from:
 
 ```
 function-type → attributes(opt) function-type-argument-clause throws(opt) -> type
-```
-
-to
-
-```
-function-type → attributes(opt) function-type-argument-clause throws-clause(opt) -> type
-```
-
-Examples
-
-```swift
-() -> Bool
-() throws -> Bool
-() throws CatError -> Bool
-```
-
-#### Closure expression
-
-Changing from
-
-```
 closure-signature → capture-list(opt) closure-parameter-clause throws(opt) function-result opt in
-```
-
-to
-
-```
-closure-signature → capture-list(opt) closure-parameter-clause throws-clause(opt) function-result opt in
-```
-
-Examples
-
-```swift
-{ () -> Bool in true }
-{ () throws -> Bool in true }
-{ () throws CatError -> Bool in true }
-```
-
-
-#### Function declaration
-
-Changing from
-
-```
 function-signature → parameter-clause throws(opt) function-result(opt)
-```
-
-to
-
-```
-function-signature → parameter-clause throws-clause(opt) function-result(opt)
-```
-
-Examples
-
-```swift
-func callCat() -> Cat
-func callCat() throws -> Cat
-func callCat() throws CatError -> Cat
-```
-
-#### Protocol initializer declaration
-
-Changing from
-
-```
 protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt) generic-where-clause(opt)
-```
-
-to
-
-```
-protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt) generic-where-clause(opt)
-```
-
-Examples
-
-```swift
-init()
-init() throws
-init() throws CatError
-```
-
-#### Initializer declaration
-
-Changing from
-
-```
 initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt)
 ```
 
-to
+to:
 
 ```
+function-type → attributes(opt) function-type-argument-clause throws-clause(opt) -> type
+closure-signature → capture-list(opt) closure-parameter-clause throws-clause(opt) function-result opt in
+function-signature → parameter-clause throws-clause(opt) function-result(opt)
+protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt) generic-where-clause(opt)
 initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt)
-```
-
-Examples
-
-```swift
-init()
-init() throws
-init() throws CatError
 ```
 
 ### Rules for `throws` and `catch`
@@ -690,15 +601,21 @@ If there is **one** error of type `E` `rethrows` will also throw `E`.
 func foo<E>(closure: () throws E -> Void) rethrows // throws E
 ```
 
-In the example above there's no need to constraint `E: Error`, as any other kind of object that does not conform to `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So the set of functions in the Standard Library (`map`, `flatMap`, `compactMap` etc.) that support `rethrows`, can be advanced to their error typed versions just by modifying the signature like
+In the example above there's no need to constraint `E: Error`, as any other kind of object that does not conform to `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one.
+
+This behavior mimics the current one dictated by:
 
 ```swift
-// current
-func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
-
-// updated to
-func map<T, E>(_ transform: (Element) throws E -> T) rethrows -> [T]
+func bar(closure1: () throws -> Void, closure2: () throws -> Void) rethrows
 ```
+
+That stablishes the following rules:
+
+1. If no closure throws, bar does not throw,
+2. If all throwing closures are typed-throw with the same error type `E`, **bar** throws `E`,
+3. If throwing closures throw different error types, or some closures throw untyped errors, **bar** throws an untyped error (`Error`).
+
+Those rules are extended to the usage of generics as follows:
 
 If there are only **multiple errors of the same type** `rethrows` throws an error of the same type.
 
