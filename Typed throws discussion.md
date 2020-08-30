@@ -156,19 +156,63 @@ throwers.append({ throw Bar() }) // Compiles today, error if we infer `throws Fo
 
 see https://forums.swift.org/t/typed-throws/39660/70
 
-### Solution 1
+### Solution group: Modify type inference
+
+#### Solution #5
+
+> `throws` functions should never be inferred to be the typed throw but the base `throws` , unless there is an explicitly specified typed throws. It would behave like follows
+
+see https://forums.swift.org/t/typed-throws/39660/175
+
+#### (incomplete) Solution #1
 
 > So don't infer `throws Foo` , and infer `throws Error` instead. This will preserve source compatibility.
 
-https://forums.swift.org/t/typed-throws/39660/71
+see https://forums.swift.org/t/typed-throws/39660/71
 
-### Solution 2
+**New Issue:**
+
+```swift
+func foo() throws SomeError {
+  throw SomeError() // can this compile if we don't infer SomeError but Error?
+}
+```
+
+#### (incomplete) Solution #2
 
 > `throws` functions should never be inferred to be the typed throw but the base `throws` in collections (array, set), unless the type is specified as follows:
 
-https://forums.swift.org/t/typed-throws/39660/72
+see https://forums.swift.org/t/typed-throws/39660/72
 
-### Solution 3
+**New Issue:**
+
+```swift
+struct Foo: Error { ... }
+struct Bar: Error { ... }
+let closure = [{ throw Foo() }] // `closure` gets inferred to `() throws Foo -> ()`
+var throwers = closure // `throwers` gets inferred to `[() throws Foo -> ()]`
+throwers.append({ throw Bar() }) // error: type mismatch
+```
+
+### Solution group: Attribute `throws`
+
+#### Solution #6
+
+```swift
+@typed throw SomeError()
+```
+
+This will always use the most specific type inference.
+
+### Solution group: Break source compatibility
+
+#### Solution #4
+
+> I guess the cleanest non source compat solution would be, if we could update source in Swift 6 from `throw FooError()` to `throw FooError() as Error` for all `throw` that happen directly in a `do` block or in closure that has it's type inferred.
+
+see https://forums.swift.org/t/typed-throws/39660/123?
+
+#### (incomplete) Solution #3
 
 ```swift
 func foo<T>(_: () throws T -> ()) { ... }
@@ -180,8 +224,10 @@ foo({ throws Foo.error }) // inferred as '() throws Foo -> ()'
 
 see https://forums.swift.org/t/typed-throws/39660/77
 
-### Solution 4
+**New Issue:**
 
-> I guess the cleanest non source compat solution would be, if we could update source in Swift 6 from `throw FooError()` to `throw FooError() as Error` for all `throw` that happen directly in a `do` block or in closure that has it's type inferred.
+```swift
+foo({ throws Foo.error }) // inferred as '() throws Foo -> ()'
+```
 
-see https://forums.swift.org/t/typed-throws/39660/123?
+Produces a conflict with generic rethrowing functions that should be introduced to the standard library (like a generic map).
