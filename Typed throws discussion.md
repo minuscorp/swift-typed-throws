@@ -6,6 +6,51 @@ Options we have developing the language while keeping compatibility: https://for
 
 So it seems there is no law that forbids *thinking* about small source adjustments. ;)
 
+## `throws T` syntax ambiguity
+
+### Issue
+
+> we discovered a design flaw in the current syntax
+> if we make the syntax like so:
+
+```swift
+func foo() throws SomeError {}
+```
+
+> then this is ambiguous:
+
+```swift
+protocol Foo {
+    func bar1() throws
+    mutating
+    func bar2()
+}
+```
+
+> `mutating` is one of several contextual keywords, which can also be an identifier.
+
+> in the protocol `Foo` we could either have this:
+
+```swift
+func foo1() throws mutating // () throws mutating -> ()
+func foo2() // () -> ()
+```
+
+> or that:
+
+```swift
+func foo1() throws // () throws Error -> ()
+mutating func foo2() // mutating () -> ()
+```
+
+> so its ambiguous
+
+### Solution 1: `throws (T)`
+
+current implementation
+
+### Solution 2: `throws<T>`
+
 ## `rethrows`
 
 ### Issue
