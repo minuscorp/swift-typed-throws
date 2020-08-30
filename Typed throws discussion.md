@@ -25,7 +25,7 @@ func foo<erased E: Error>(fn: () throws E -> Void) rethrows Error
 
 see https://forums.swift.org/t/typed-throws/39660/53
 
-### Solution 1
+### Solution 1: `rethrows T`
 
 rethrow without converting (compatible to current)
 
@@ -89,6 +89,14 @@ In general:
 
 - `rethrows T`: Throw `T` if parameter throws
 - `rethrows === (rethrows T where T === Error)`: Throw `Error` if parameter throws
+
+### Solution 2: `rethrows` always throws input errors or erases to `Error`
+
+> I'd like to strongly encourage a direction that does /not/ worry about or consider this, particularly with a goal to simplify the implementation and surface area complexity of the feature. A context like the above could/should just immediately type erase to `Error` . In addition to being simple, general, and predictable, this is important for compatibility with existing logic.
+
+see https://forums.swift.org/t/typed-throws/39660/152
+
+open questions see https://forums.swift.org/t/typed-throws/39660/160
 
 ## `throw` and type inference
 
