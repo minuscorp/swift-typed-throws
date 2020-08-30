@@ -206,7 +206,7 @@ This will always use the most specific type inference.
 
 ### Solution group: Break source compatibility
 
-#### Solution #4: Migrate code (source breaking) with `throw SomeError() as Error`
+#### Solution #4
 
 > I guess the cleanest non source compat solution would be, if we could update source in Swift 6 from `throw FooError()` to `throw FooError() as Error` for all `throw` that happen directly in a `do` block or in closure that has it's type inferred.
 
