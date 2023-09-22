@@ -380,24 +380,91 @@ var value: Success {
 }
 ```
 
-### Rules for `throws` and `catch`
+### Throwing within a function that declares a typed error
 
-#### `throws`
+Any function, closure or function type that is marked as `throws` can declare which type the function throws. That type, which is called the *thrown error type*, must conform to the `Swift.Error` protocol.
 
-1. Any function/method, (protocol) init method, closure or function type that is marked as `throws` can declare which type the function/method throws.
-2. At most one type of specific error can be used with a `throws`.
-3. The error **must** conform to `Swift.Error`. 
-4. An error thrown from the function's body has to be compatible with the thrown error of the function's signature.
+Every uncaught error that can be thrown from the body of the function must be convertible to the thrown error type. This applies to both explicit `throw` statements and any errors thrown by other calls (as indicated by a `try`). For example:
 
-#### `catch`
+```swift
+func throwingTypedErrors() throws(CatError) {
+  throw CatError.asleep // okay, type matches
+  throw .asleep // okay, can infer contextual type from the thrown error type
+  throw KidError() // error: KidError is not convertible to CatError
+  
+  try callCat() // okay
+	try callKids() // error: implicitly throws KidError, which is not convertible to CatError
+  
+  do {
+    try callKids() // okay, because this error is caught and suppressed below
+  } catch {
+    // eat the error
+  }
+}
+```
 
-1. Throwing inside the `do` block using `throws` or a function that `throws` is handled the same regarding errors.
-2. A general `catch` clause always infers the `error` as `Swift.Error`
-3. `#openquestion` In general needless `catch` clauses are marked with warnings (prefering more specific ones to keep if there is a conflict between clauses). But it should be discussed for which scenarios we can apply these, because it's not easy do decide this for non trivial `catch` clauses or error type hierarchies.
+Because a value of any `Error`-conforming type implicitly converts to `any Error`, this implies that an function declared with untyped `throws` can throw anything:
 
-`#openquestion` Alternative to consider:
+```swift
+func untypedThrows() throws {
+  throw CatError.asleep // okay, CatError converts to any Error
+  throw KidError() // okay, KidError converts to any Error
+  try callCat() // okay, thrown CatError converts to any Error
+	try callKids() // okay, thrown KidError converts to any Error
+}
+```
 
-> If all statements in the `do` block throw specific errors and there is a `catch` clause that does not match one of this errors, then a compiler error is generated.
+Therefore, these rules subsume those of untyped throws, and no existing code will change behavior.
+
+### Catching typed thrown errors 
+
+A `do...catch` block is used to catch and process thrown errors. With only untyped errors, the type of the error thrown from inside the `do` block is always `any Error`. In the presence of typed throws, the type of the error thrown from inside the `do` block depends on the specific throwing sites. 
+
+When all throwing sites within a `do` block produce the same error type (ignoring any that throw `Never`), that error type is used as the type of the thrown error. For example:
+
+```swift
+do {
+  try callCat() // throws CatError
+  if something {
+    throw CatError.asleep // throws CatError
+  }
+} catch {
+  // implicit 'error' value has type CatError
+  if error == .asleep { 
+    openFoodCan()
+  }
+}
+```
+
+This also implies that one can use the thrown type context to perform type-specific checks in the catch clauses, e.g.,
+
+```swift
+do {
+  try callCat() // throws CatError
+  if something {
+    throw CatError.asleep // throws CatError
+  }
+} catch .asleep {
+  openFoodCan()
+} // note: CatError can be thrown out of this do...catch block when the cat isn't asleep**Rationale**: 
+```
+
+> **Rationale**: By inferring a concrete result type for the thrown error type, we can entirely avoid having to reason about existential error types within `catch` blocks, leading to a simpler syntax. Additionally, it preserves the notion that a `do...catch` block that has a `catch` site accepting anything (i.e., one with no conditions) can exhaustively suppress all errors. 
+
+When throw sites within the `do` block throw different (non-`Never`) error types, the resulting error type is `any Error`. For example:
+
+```swift
+do {
+  try callCat() // throws CatError
+  try callKids() // throw KidError
+} catch {
+  // implicit 'error' variable has type 'any Error'
+}
+```
+
+In essence, when there are multiple possible thrown error types, we immediately resolve to the untyped equivalent of `any Error`. Again, this rule for typed throws subsumes the existing rule for untyped throws, in which every throw site produces an error of type `any Error`.
+
+> **Rationale**: While it would be possible to compute a more precise "union" type of different error types, doing so is potentially an expensive operation at compile time and run time, as well as being harder for the programmer to reason about. If in the future it becomes important to tighten up the error types, that could be done in a mostly source-compatible manner.
 
 ### Error scenarios considered
 
