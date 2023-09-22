@@ -9,16 +9,19 @@
 
 ## Introduction
 
-`throws` in Swift is missing the possibility to use it with specific error types. On the contrary [`Result`](https://developer.apple.com/documentation/swift/result) and [`Future`](https://developer.apple.com/documentation/combine/future) support specific error types. This is inconsistent without reason. The proposal is about introducing the possibility to support specific error types with `throws`.
+Swift's error handling model allows functions and closures marked `throws` to note that they can exit by throwing an error. The error values themselve are always type-erased to `any Error`. This approach encourages errors to be handled generically, but makes it impossible to provide more precisely-typed errors without resorting to something like [`Result`](https://developer.apple.com/documentation/swift/result). This proposal introduces the ability to specify that functions and closures only throw errors of a particular concrete type.
 
-Swift-evolution thread: [Typed throw functions - Evolution / Discussion - Swift Forums](https://forums.swift.org/t/typed-throw-functions/38860)
+Swift-evolution threads:
+
+* [Typed throw functions - Evolution / Discussion - Swift Forums](https://forums.swift.org/t/typed-throw-functions/38860)
+* [Status check: typed throws](https://forums.swift.org/t/status-check-typed-throws/66637)
 
 
 ## Motivation
 
 Swift is known for being explicit about semantics and using types to communicate constraints that apply to specific structures and APIs. Some developers are not satisfied with the current state of `throws` as it is not explicit about errors that are thrown. These leads to the following issues with `throws` current behaviour.
 
-### Communicates less error information than `Result` or `Future`
+### Communicates less error information than `Result` or `Task`
 
 Assume you have this Error type
 
@@ -38,7 +41,7 @@ func callCat() -> Result<Cat, CatError>
 or
 
 ```swift
-func callFutureCat() -> Future<Cat, CatError>
+func callFutureCat() -> Task<Cat, CatError>
 ```
 
 with
@@ -66,9 +69,9 @@ func callFamily() throws -> Family {
 
 As a user of `callFamily() throws` it gets a lot harder to understand, which errors can be thrown. Even if reading the functions implementation would be possible (which sometimes is not), then you are usally forced to read the whole implementation, collecting all uses of `try` and investigating the whole error flow dependencies of the sub program. Which almost nobody does, and the people that try often produce mistakes, because complexity quickly outgrows.
 
-### Inconsistent explicitness compared to `Result` or `Future`
+### Inconsistent explicitness compared to `Result` or `Task`
 
-`throws` it's not consistent in the order of explicitness in comparison to `Result` or `Future`, which makes it hard to convert between these types or compose them easily.
+`throws` it's not consistent in the order of explicitness in comparison to `Result` or `Task`, which makes it hard to convert between these types or compose them easily.
 
 ```swift
 func callAndFeedCat1() -> Result<Cat, CatError> {
@@ -256,7 +259,7 @@ func callCat() throws CatError -> Cat
 
 Here is how `throws` with specific error would reduce the issues mentioned in "[Motivation](#motivation)".
 
-### Communicates the same amount of error information like `Result` or `Future`
+### Communicates the same amount of error information like `Result` or `Task`
 
 Compare
 
@@ -272,9 +275,9 @@ func callCat() throws CatError -> Cat
 
 It now contains the same error information like `Result`.
 
-### Consistent explicitness compared to `Result` or `Future`
+### Consistent explicitness compared to `Result` or `Task`
 
-`throws` is now consistent in the order of explicitness in comparison to `Result` or `Future`, which makes it easy to convert between these types.
+`throws` is now consistent in the order of explicitness in comparison to `Result` or `Task`, which makes it easy to convert between these types.
 
 ```swift
 func callCat() throws CatError -> Cat
