@@ -165,7 +165,7 @@ Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/b
 In general we want to add the possibility to use `throws` with a single, specific error.
 
 ```swift
-func callCat() throws CatError -> Cat {
+func callCat() throws(CatError) -> Cat {
   if Int.random(in: 0..<24) < 20 {
     throw .sleeps
   }
@@ -176,7 +176,7 @@ func callCat() throws CatError -> Cat {
 The function can only throw instances of `CatError`. This provides contextual type information for all throw sites, so we can write `.sleeps` instead of the more verbose `CatError.sleeps` that's needed with untyped throws. Any attempt to throw any other kind of error out of the function will be an error:
 
 ```swift
-func callCatBadly() throws CatError -> Cat {
+func callCatBadly() throws(CatError) -> Cat {
   throw GenericError(message: "sleeping")  // error: GenericError cannot be converted to CatError
 }
 ```
@@ -184,12 +184,12 @@ func callCatBadly() throws CatError -> Cat {
 Maintaining specific error types throughout a function is much easier than when using `Result`, because one can use `try` consistently:
 
 ```swift
-func stringFromArray(_ array: [String], at index: Int, errorMessage: String) throws GenericError -> String {
+func stringFromArray(_ array: [String], at index: Int, errorMessage: String) throws(GenericError) -> String {
     guard array.indices.contains(index) else { throw GenericError(message: errorMessage) }
     return array[index]
 }
 
-func userResultFromStrings(strings: [String]) throws GenericError -> User  {
+func userResultFromStrings(strings: [String]) throws(GenericError) -> User  {
     let firstName = try stringFromArray(strings, at: 0, errorMessage: "Missing first name")
     let lastName = try stringFromArray(strings, at: 1, errorMessage: "Missing last name")
     return User(firstName: firstName, lastName: lastName)
@@ -218,7 +218,7 @@ Note that the implicit `error` variable within the catch block has the concrete 
 When a `do` statement can throw errors with different concrete types, or involves any calls to functions using untyped throws, the `catch` block will receive an `any Error` type:
 
 ```swift
-func callKids() throws KidError -> [Kid] { ... }
+func callKids() throws(KidError) -> [Kid] { ... }
 
 do {
   try callCat()
@@ -231,12 +231,12 @@ do {
 When one needs to translate errors of one concrete type to another, use a `do...catch` block around each sequence of calls that produce the same kind of error :
 
 ```swift
-func firstNameResultFromArray(_ array: [String]) throws FirstNameError -> String {
+func firstNameResultFromArray(_ array: [String]) throws(FirstNameError) -> String {
     guard array.indices.contains(0) else { throw FirstNameError() }
     return array[0]
 }
 
-func userResultFromStrings(strings: [String]) throws GenericError -> User  {
+func userResultFromStrings(strings: [String]) throws(GenericError) -> User  {
     do {
         let firstName = try stringFromArray(strings, at: 0, errorMessage: "Missing first name")
         return User(firstName: firstName, lastName: "")        
@@ -252,7 +252,7 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 Typed throws generalizes over both untyped throws and non-throwing functions. A function specified with `any Error` as its thrown type:
 
 ```swift
-func throwsAnything() throws any Error { ... }
+func throwsAnything() throws(any Error) { ... }
 ```
 
 is equivalent to untyped throws:
@@ -291,28 +291,26 @@ Now, the expression `Result(catching: callCat)` will produce an instance of type
 
 ### Syntax adjustments
 
-We are referring to [Summary of the Grammar — The Swift Programming Language (Swift 5.3)](https://docs.swift.org/swift-book/ReferenceManual/zzSummaryOfTheGrammar.html).
-
-Adding
+The [Swift grammar](https://docs.swift.org/swift-book/ReferenceManual/zzSummaryOfTheGrammar.html) is updated wherever there is either `throws` or `rethrows`, to optionally include a thrown type, e.g.,
 
 ```
-throws-clause -> throws type-identifier(opt)
-```
+throws-clause -> throws thrown-type(opt)
 
-to the grammar.
+thrown-type -> '(' type ')'
+```
 
 #### Function type
 
 Changing from
 
 ```
-function-type → attributes(opt) function-type-argument-clause throws(opt) -> type
+function-type → attributes(opt) function-type-argument-clause async(opt) throws(opt) -> type
 ```
 
 to
 
 ```
-function-type → attributes(opt) function-type-argument-clause throws-clause(opt) -> type
+function-type → attributes(opt) function-type-argument-clause async(opt) throws-clause(opt) -> type
 ```
 
 Examples
@@ -320,7 +318,7 @@ Examples
 ```swift
 () -> Bool
 () throws -> Bool
-() throws CatError -> Bool
+() throws(CatError) -> Bool
 ```
 
 #### Closure expression
@@ -328,13 +326,13 @@ Examples
 Changing from
 
 ```
-closure-signature → capture-list(opt) closure-parameter-clause throws(opt) function-result opt in
+closure-signature → capture-list(opt) closure-parameter-clause async(opt) throws(opt) function-result opt in
 ```
 
 to
 
 ```
-closure-signature → capture-list(opt) closure-parameter-clause throws-clause(opt) function-result opt in
+closure-signature → capture-list(opt) closure-parameter-clause async(opt) throws-clause(opt) function-result opt in
 ```
 
 Examples
@@ -342,74 +340,44 @@ Examples
 ```swift
 { () -> Bool in true }
 { () throws -> Bool in true }
-{ () throws CatError -> Bool in true }
+{ () throws(CatError) -> Bool in true }
 ```
 
 
-#### Function declaration
+#### Function, initializer, and accessor declarations
 
 Changing from
 
 ```
-function-signature → parameter-clause throws(opt) function-result(opt)
+function-signature → parameter-clause async(opt) throws(opt) function-result(opt)
+function-signature → parameter-clause async(opt) rethrows(opt) function-result(opt)
+initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause async(opt) throws(opt)
+initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause async(opt) throws(opt)
 ```
 
 to
 
 ```
-function-signature → parameter-clause throws-clause(opt) function-result(opt)
+function-signature → parameter-clause async(opt) throws-clause(opt) function-result(opt)
+initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause async(opt) throws-clause(opt)
 ```
 
-Examples
+Note that the current grammar does not account for throwing accessors, although they should receive the same transformation.
+
+#### Examples
 
 ```swift
 func callCat() -> Cat
 func callCat() throws -> Cat
-func callCat() throws CatError -> Cat
-```
+func callCat() throws(CatError)  -> Cat
 
-#### Protocol initializer declaration
-
-Changing from
-
-```
-protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt) generic-where-clause(opt)
-```
-
-to
-
-```
-protocol-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt) generic-where-clause(opt)
-```
-
-Examples
-
-```swift
 init()
 init() throws
-init() throws CatError
-```
+init() throws(CatError)
 
-#### Initializer declaration
-
-Changing from
-
-```
-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws(opt)
-```
-
-to
-
-```
-initializer-declaration → initializer-head generic-parameter-clause(opt) parameter-clause throws-clause(opt)
-```
-
-Examples
-
-```swift
-init()
-init() throws
-init() throws CatError
+var value: Success {
+  get throws(Failure) { ... }
+}
 ```
 
 ### Rules for `throws` and `catch`
@@ -418,7 +386,7 @@ init() throws CatError
 
 1. Any function/method, (protocol) init method, closure or function type that is marked as `throws` can declare which type the function/method throws.
 2. At most one type of specific error can be used with a `throws`.
-3. The error **must** conform to `Swift.Error` by (transitive) conformation.
+3. The error **must** conform to `Swift.Error`. 
 4. An error thrown from the function's body has to be compatible with the thrown error of the function's signature.
 
 #### `catch`
@@ -436,8 +404,8 @@ init() throws CatError
 Assuming the functions and errors
 
 ```swift
-func callCat() throws CatError -> Cat
-func callKids() throws KidsError -> Kids
+func callCat() throws(CatError) -> Cat
+func callKids() throws(KidsError) -> Kids
 
 struct CatError {
     reason: String
@@ -553,7 +521,7 @@ With **no** error being thrown by the inner functions `rethrows` also does not t
 If there is **one** error of type `E` `rethrows` will also throw `E`.
 
 ```swift
-func foo<E>(closure: () throws E -> Void) rethrows // throws E
+func foo<E>(closure: () throws(E) -> Void) rethrows // throws E
 ```
 
 In the example above there's no need to constraint `E: Error`, as any other kind of object that does not conform to `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So the set of functions in the Standard Library (`map`, `flatMap`, `compactMap` etc.) that support `rethrows`, can be advanced to their error typed versions just by modifying the signature like
@@ -563,19 +531,19 @@ In the example above there's no need to constraint `E: Error`, as any other kind
 func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
 
 // updated to
-func map<T, E>(_ transform: (Element) throws E -> T) rethrows -> [T]
+func map<T, E>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
 ```
 
 If there are only **multiple errors of the same type** `rethrows` throws an error of the same type.
 
 ```swift
-func foo<E>(f: () throws E -> Void, g: () throws E -> Void) rethrows // throws E
+func foo<E>(f: () throws(E) -> Void, g: () throws(E) -> Void) rethrows // throws E
 ```
 
 If there are **multiple differing errors** `rethrows` just throws `Error`.
 
 ```swift
-func foo<E1, E2>(f: () throws E1 -> Void, g: () throws E2 -> Void) rethrows // throws Error
+func foo<E1, E2>(f: () throws(E1) -> Void, g: () throws(E2) -> Void) rethrows // throws Error
 ```
 
 Because information loss will happen by falling back to `Error` this solution is far from ideal, because keeping type information on errors is the whole point of the proposal.
@@ -592,7 +560,7 @@ enum ErrorUnion2<E1: Error, E2: Error>: Error {
     case second(E2)
 }
 
-func foo<E1, E2>(f: () throws E1 -> Void, g: () throws E2 -> Void) rethrows // throws ErrorUnion2<E, E2> -> Void
+func foo<E1, E2>(f: () throws(E1) -> Void, g: () throws(E2) -> Void) rethrows // throws ErrorUnion2<E, E2> -> Void
 ```
 
 But for `rethrows` to work in this way, these `enum`s need to be part of the standard library. A downside to mention is, that an `ErrorUnion2` would not be apple to auto merge its cases into one, if the cases are of the same error type, where with sum types `A | A === A`.
@@ -607,8 +575,8 @@ public struct PublicCatError: Error {}
 
 protocol CatFeeder {
     public func throwPrivateCatErrorOnly() throws -> CatStatus // compiles
-    public func throwPrivateCatErrorExplicitly() throws PrivateCatError -> CatStatus // won't compile 
-    public func throwPublicCatErrorExplicitly() throws PublicCatError -> CatStatus // compiles
+    public func throwPrivateCatErrorExplicitly() throws (PrivateCatError) -> CatStatus // won't compile 
+    public func throwPublicCatErrorExplicitly() throws (PublicCatError) -> CatStatus // compiles
 }
 ```
 
@@ -618,7 +586,7 @@ Or we can use `associatedtypes` that (implicitly) conform to `Swift.Error`.
 protocol CatFeeder {
     associatedtype CatError: Error // The explicit Error conformance can be omited if there's a consumer that defines the type as a thrown one.
     
-    func feedCat() throws CatError -> CatStatus
+    func feedCat() throws(CatError) -> CatStatus
 }
 ```
 
@@ -627,7 +595,7 @@ protocol CatFeeder {
 Typed `throws` can be used in combination with generic functions by making the error type generic.
 
 ```swift
-func foo<E>(e: E) throws E
+func foo<E>(e: E) throws(E)
 ```
 
 `E` would be constrained to `Error`, because it is used in `throws`.
@@ -648,13 +616,13 @@ let f1: () -> Void
 Converting a non-throwing function to a throwing one is allowed
 
 ```swift
-let f2: () throws SubError -> Void = f1
+let f2: () throws(SubError) -> Void = f1
 ```
 
 It's also allowed to assign a subtype of a thrown error, though the subtype information is erased and the error of f2 will be casted up.
 
 ```swift
-let f3: () throws BaseError -> Void = f2
+let f3: () throws(BaseError) -> Void = f2
 ```
 
 Erasing the specific error type is possible
@@ -665,15 +633,15 @@ let f4: () throws -> Void = f3
 
 In general (assuming function parameters and return type are compatible):
 
-- `() -> Void` is subtype of `() throws B -> Void`
-- `() throws B -> Void` is subtype of `() throws -> Void`
-- `() throws B -> Void` is subtype of `() throws A -> Void` if `B` is subtype of `A`
+- `() -> Void` is subtype of `() throws(B) -> Void`
+- `() throws(B) -> Void` is subtype of `() throws -> Void`
+- `() throws(B) -> Void` is subtype of `() throws(A) -> Void` if `B` is subtype of `A`
 
 `#openquestion` For the semantic analysis it was suggested that every function is interpreted as a throwing function leading to this equivalences
 
 ```swift
-() -> Void === () throws Never -> Void
-() throws -> Void === () throws Error -> Void
+() -> Void === () throws(Never) -> Void
+() throws -> Void === () throws(Error) -> Void
 ```
 
 But it should be discussed if these equivalences should become part of the syntax.
@@ -732,17 +700,17 @@ class DeepBlueError: BlueError { }
 
 protocol ThrowingColoredError: Throwing {
     // Refinement
-    func f() throws ColoredError
+    func f() throws(ColoredError)
 }
 
 protocol ThrowingBlueError: ThrowingColoredError {
     // Refinement
-    func f() throws BlueError
+    func f() throws(BlueError)
 }
 
 protocol ThrowingDeepBlueErrorError: ThrowingBlueError {
     // Refinement
-    func f() throws DeepBlueError
+    func f() throws(DeepBlueError)
 }
 ```
 
@@ -753,7 +721,7 @@ A function that `throws` an `enum` based `Error` can avoid to explicitly declare
 ```swift
 enum Foo: Error { case bar, baz }
 
-func fooThrower() throws Foo {
+func fooThrower() throws(Foo) {
     guard someCondition else {
         throw .bar
     }
@@ -777,7 +745,7 @@ catch .baz { ... }
 Having a typed `throws` it would be quite convenient to not being forced to explicitly convert between `throws` and `Result`. Semantically `throws` could be just another syntax for `Result`, which would make both of them more composable.
 
 ```swift
-func getCatOrThrow() throws CatError -> Cat
+func getCatOrThrow() throws(CatError) -> Cat
 func getCatResult() -> Result<Cat, CatError>
 ```
 
@@ -806,7 +774,7 @@ init(catching body: () throws -> Success)
 to
 
 ```swift
-init(catching body: () throws Failure -> Success)
+init(catching body: () throws(Failure) -> Success)
 ```
 
 and `Result`'s [get()](https://developer.apple.com/documentation/swift/result/3139397-get) from
@@ -818,7 +786,7 @@ func get() throws -> Success
 to
 
 ```swift
-func get() throws Failure -> Success
+func get() throws(Failure) -> Success
 ```
 
 ### Library Evolution
@@ -832,7 +800,7 @@ Our approach is quite similar to what happens with switch cases:
 ```swift
 enum NonFrozenEnum: Error { case cold, warm, hot }
 
-func wheathersLike() throws NonFrozenEnum -> Weather
+func wheathersLike() throws(NonFrozenEnum) -> Weather
 
 try { wheathersLike() } 
 catch .cold { ... }
@@ -852,7 +820,7 @@ Assuming a current API
 struct DataLoaderError {}
 
 protocol DataLoader {
-    func load throws DataLoaderError -> Data
+    func load throws(DataLoaderError) -> Data
 }
 ```
 
@@ -929,7 +897,7 @@ enum SomeErrors: Error {
     case foo, bar, baz
 }
 
-func theErrorMaker() throws SomeErrors
+func theErrorMaker() throws(SomeErrors)
 
 do {
     try theErrorMaker()
@@ -1011,8 +979,8 @@ There is a scenario, that potentially breaks source compatibility (original post
 ```swift
 struct Foo: Error { ... }
 struct Bar: Error { ... }
-var throwers = [{ throw Foo() }] // Inferred as `Array<() throws -> ()>`, or `Array<() throws Foo -> ()>`?
-throwers.append({ throw Bar() }) // Compiles today, error if we infer `throws Foo`
+var throwers = [{ throw Foo() }] // Inferred as `Array<() throws -> ()>`, or `Array<() throws(Foo) -> ()>`?
+throwers.append({ throw Bar() }) // Compiles today, error if we infer `throws(Foo)`
 ```
 
 The combination of type inference and `throw` can lead to trouble, because with more specific error types supported for throwing statements, the inferred type needs to change to the more specific type. At least this would be the intuitive behaviour.
@@ -1026,7 +994,7 @@ Another example would be updating Result's [init(catching:)](https://developer.a
 [swift/Mangling.rst at master · apple/swift](https://github.com/apple/swift/blob/master/docs/ABI/Mangling.rst)
 
 ```
-function-signature ::= params-type params-type throws? throws-type?
+function-signature ::= params-type params-type async? throws-clause?
 ```
 
 `#openquestion` Any insights are appreciated.
