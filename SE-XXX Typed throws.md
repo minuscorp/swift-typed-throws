@@ -462,62 +462,101 @@ do {
 }
 ```
 
-In essence, when there are multiple possible thrown error types, we immediately resolve to the untyped equivalent of `any Error`. Again, this rule for typed throws subsumes the existing rule for untyped throws, in which every throw site produces an error of type `any Error`.
+In essence, when there are multiple possible thrown error types, we immediately resolve to the untyped equivalent of `any Error`. We will refer to this notion as a type function `errorUnion(E1, E2, ..., EN)`, which takes `N` different error types (e.g., for throwing sites within a `do` block) and produces the union error type of those types. Our definition and use of `errorUnion`  for typed throws subsumes the existing rule for untyped throws, in which every throw site produces an error of type `any Error`.
 
 > **Rationale**: While it would be possible to compute a more precise "union" type of different error types, doing so is potentially an expensive operation at compile time and run time, as well as being harder for the programmer to reason about. If in the future it becomes important to tighten up the error types, that could be done in a mostly source-compatible manner.
 
 ### `rethrows`
 
-The adjustments to `rethrows` differ depending on how many different errors are thrown by the typed `throws` of the inner functions.
+A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
 
-With **no** error being thrown by the inner functions `rethrows` also does not throw an error.
-
-If there is **one** error of type `E` `rethrows` will also throw `E`.
+For example, consider a function `foo` that takes a closure throwing a type `E` (which maybe be `any Error` or `Never` for untyped throws and non-throwing functions). It will only throw when its argument throws, and then only a value of the thrown type of that argument, `E`:
 
 ```swift
-func foo<E>(closure: () throws(E) -> Void) rethrows // throws E
+func foo<E: Error>(closure: () throws(E) -> Void) rethrows(E)
 ```
 
-In the example above there's no need to constraint `E: Error`, as any other kind of object that does not conform to `Error` will throw a compilation error, but it is handy to match the inner `Error` with the outer one. So the set of functions in the Standard Library (`map`, `flatMap`, `compactMap` etc.) that support `rethrows`, can be advanced to their error typed versions just by modifying the signature like
+One could have multiple arguments of function type that that all throw the same error type, e.g.,
 
 ```swift
-// current
-func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
-
-// updated to
-func map<T, E>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
+func foo<E: Error>(f: () throws(E) -> Void, g: () throws(E) -> Void) rethrows(E)
 ```
 
-If there are only **multiple errors of the same type** `rethrows` throws an error of the same type.
+Multiple arguments of function type could throw different error types. The implementation would be responsible either for translating those errors to a specific concrete error type:
 
 ```swift
-func foo<E>(f: () throws(E) -> Void, g: () throws(E) -> Void) rethrows // throws E
-```
-
-If there are **multiple differing errors** `rethrows` just throws `Error`.
-
-```swift
-func foo<E1, E2>(f: () throws(E1) -> Void, g: () throws(E2) -> Void) rethrows // throws Error
-```
-
-Because information loss will happen by falling back to `Error` this solution is far from ideal, because keeping type information on errors is the whole point of the proposal.
-
-(Theoretical) Alternatives for rethrowing **multiple differing errors**:
-
-- infer the closest common base type (which seems to be hard, because as to commenters in the forum type relation information seems to be missing in the runtime, however information loss on thrown error types will happen too)
-- **Not for discussion of this proposal:** sum types like `A | B` which were discussed and rejected in the past (see [swift-evolution/xxxx-union-type.md](https://github.com/frogcjn/swift-evolution/blob/master/proposals/xxxx-union-type.md))
-- use some replica sum type `enum` like
-
-```swift
-enum ErrorUnion2<E1: Error, E2: Error>: Error {
-    case first(E1)
-    case second(E2)
+func translateErrors<E1: Error, E2: Error>(
+  f: () throws(E1) -> Void, 
+  g: () throws(E2) -> Void
+) rethrows(GenericError) {
+  do {
+    try f()
+  } catch {
+    throw GenericError(message: "E1: \(error)")
+  }
+  
+  do {
+    try g()
+  } catch {
+    throw GenericError(message: "E2: \(error)")
+  }
 }
-
-func foo<E1, E2>(f: () throws(E1) -> Void, g: () throws(E2) -> Void) rethrows // throws ErrorUnion2<E, E2> -> Void
 ```
 
-But for `rethrows` to work in this way, these `enum`s need to be part of the standard library. A downside to mention is, that an `ErrorUnion2` would not be apple to auto merge its cases into one, if the cases are of the same error type, where with sum types `A | A === A`.
+If called with non-throwing closure arguments, `translateErrors` will not throw. If either of the closure arguments can throw, then `translateErrors` can throw---but will always throw a `GenericError`. 
+
+Alternately, one can specify a suitably-generic thrown error type when rethrowing:
+
+```swift
+func untypedOrNonthrowing<E1: Error, E2: Error>(
+  f: () throws(E1) -> Void, 
+  g: () throws(E2) -> Void
+) rethrows(any Error) {
+  try f()
+  try g()
+}
+```
+
+If called with non-throwing closure arguments, `untypedOrNonthrowing` will not throw. If either of the closure arguments can throw, then `untypedOrNonthrowing` can throw `any Error`. 
+
+A function can be `rethrows` without specifying any thrown error type. Prior to typed throws, this always meant that it would throw `any Error` if any of the closure arguments throws. For typed throws, we define `rethrows` to be equivalent to `rethrows(errorUnion(E1, E2, ..., EN))`, where each `Ei` is the thrown error type for one of the closure parameters, using the same ideas from `do...catch`statements. This definition is ideal for operations that rethrow only what their closure arguments throw, such as the `map` operation on collections:
+
+```swift
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
+// equivalent to
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows(E) -> [T]
+```
+
+If there are multiple closure parameters that have different thrown error types, or if any of the closure parameters use untyped throws, the rethrown type will be `any Error`.
+
+```swift
+func manyErrors<E1: Error, E2: Error>(
+  f: () throws(E1) -> Void, 
+  g: () throws(E2) -> Void
+) rethrows { ... } // equivalent to rethrows(any Error)
+```
+
+There is a small chance of this rule causing confusion, because while `throws` is equivalent to `throws(any Error)`, `rethrows` will infer the error type differently. It is somewhat contrived, but one could imagine an API that begins like this:
+
+```swift
+func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
+  try f()
+}
+```
+
+possibly evolving to try to translate the error:
+
+```swift
+func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
+  do {
+	  try f()
+	} catch {
+    throw GenericError(message: "\(error)") // error: GenericError is not an E
+  }
+}
+```
+
+However, this seems unlikely to cause problems in practice, and the only real way to avoid it would be to prohibit the use of `rethrows` (with no specified thrown type) when any of the closure parameters use typed throws.
 
 ### Usage in Protocols
 
@@ -742,6 +781,8 @@ to
 ```swift
 func get() throws(Failure) -> Success
 ```
+
+Also update `Task` in this manner, and figure out `rethrows` impact on the standard library.
 
 ### Library Evolution
 
