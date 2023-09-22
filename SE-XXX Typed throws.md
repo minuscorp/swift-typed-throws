@@ -52,26 +52,9 @@ func callCatOrThrow() throws -> Cat
 
 `throws` communicates less information about why the cat is not about to come to you.
 
-If you write your own module with multiple throwing functions, that depend on each other, it's even harder to track down, which error can be thrown from which function.
+### Inability to interconvert `throws` with `Result` or `Task`
 
-```swift
-func callKids() throws -> Kids // maybe you still know that this can only by a `KidsError`
-func callSpouse() throws -> Spouse // but a `Spouse` can fail in many different ways right?
-func callCat() throws -> Cat // `CatError` I guess
-
-func callFamily() throws -> Family {
-    let kids = try callKids()
-    let spouse = try callSpouse()
-    let cat = try callCat()
-    return Family(kids: kids, spouse: spouse, cat: cat)
-}
-```
-
-As a user of `callFamily() throws` it gets a lot harder to understand, which errors can be thrown. Even if reading the functions implementation would be possible (which sometimes is not), then you are usally forced to read the whole implementation, collecting all uses of `try` and investigating the whole error flow dependencies of the sub program. Which almost nobody does, and the people that try often produce mistakes, because complexity quickly outgrows.
-
-### Inconsistent explicitness compared to `Result` or `Task`
-
-`throws` it's not consistent in the order of explicitness in comparison to `Result` or `Task`, which makes it hard to convert between these types or compose them easily.
+The fact that`throws` carries less information than `Result` or `Task` means that conversions to `throws` loses type information, which can only be recovered by explicit casting:
 
 ```swift
 func callAndFeedCat1() -> Result<Cat, CatError> {
@@ -96,82 +79,6 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
         // so what should we return here?
         return Result.failure(error)
     }
-}
-```
-
-### Code is less self documenting
-
-Do you at least once stopped at a throwing (or loosely error typed) function wanting to know, what it can throw? Here is a more complex example. Be aware that it's not about a throwing function, but the problem applies to throwing functions as well. The root issue is the loosely typed error.
-
-[urlSession(\_:task:didCompleteWithError:) | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontaskdelegate/1411610-urlsession)
-
-```swift
-optional func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?)
-```
-
-> The only errors your delegate receives through the error parameter are client-side errors, such as being unable to resolve the hostname or connect to the host.
-
-Ok so we show a pop-up if such an error occurs like we would if we have a response error. Furthermore we want to provide task cancellation because it's a big file download.
-
-Now the user cancels the file download and sees the error pop-up which is **not** what we wanted.
-
-What went wrong? You hopefully read the documentation of [cancel() | Apple Developer Documentation](https://developer.apple.com/documentation/foundation/urlsessiontask/1411591-cancel) or you debug the process and are surprised of this unexpected [`NSURLErrorCancelled`](https://developer.apple.com/documentation/foundation/1508628-url_loading_system_error_codes/nsurlerrorcancelled) error.
-
-Now you know (at least) that you want to ignore this specific error. But which other errors are you not aware of?
-
-### Outdated API documentation
-
-API documentation could and usually become outdated, because it's not checked by the compiler. Furthermore the `- throws:` documentation does not provide linking to errors ([Apple Developer Markup Formatting Reference](https://developer.apple.com/library/archive/documentation/Xcode/Reference/xcode_markup_formatting_ref/index.html#//apple_ref/doc/uid/TP40016497-CH2-SW1)) making it even harder to find the error types in questions.
-
-Assume some scarce documentation (more thorough documentation is even more likely to get outdated).
-
-```swift
-/// - throws: CatError
-func callCatOrThrow() throws -> Cat
-```
-
-Let's update the method to load this cat from the network:
-
-```swift
-/// - throws: CatError
-func callCatOrThrow() throws -> Cat { // now throws NetworkError additionally
-    let catJSON = try loadCatJSON() // throws NetworkError
-    // ...
-}
-
-struct NetworkError: Error {}
-```
-
-And there you have it. No one will check this `NetworkError` in specific catch clauses, even though it's not unlikely to have another error message for network issues.
-
-### Potential drift between thrown errors and catch clauses
-
-The example from section "[Outdated API documentation](#outdated-api-documentation)" shows the issue where new errors from an updated API are not recognized by the API user. It's also possible that catched errors are replaced or removed by an updated API. So we end up with outdated catch clauses:
-
-```swift
-/// throws CatError, NetworkError
-func callCatOrThrow() throws -> Cat
-```
-gets updated to
-
-```swift
-/// throws CatError, DatabaseError
-func callCatOrThrow() throws -> Cat
-
-struct DatabaseError: Error {}
-```
-
-Now we have outdated catch clauses
-
-```swift
-do {
-    let cat = try callCatOrThrow()
-} catch let error as CatError {
-    // CatError will be catched here
-} catch let error as NetworkError {
-    // won't happen anymore
-} catch {
-    // DatabaseError will be catched here
 }
 ```
 
@@ -240,11 +147,15 @@ func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
 
 This is even more awful then the first approach, because now we are writing the implementation of the `flatMap` operator over an over again.
 
+### Existential error types incur overhead
+
+Untyped errors have the existential type `any Error`, which incurs some [necessary overhead](https://github.com/apple/swift-evolution/blob/main/proposals/0335-existential-any.md), in code size, heap allocation overhead, and execution performance, due to the need to support values of unknown type. In constrained environments such as those supported by [Embedded Swift](https://forums.swift.org/t/embedded-swift/67057), existential types may not be permitted due to these overheads, making the existing untyped throws mechanism unusable in those environments.
+
 ### Patterns of Swift libraries
 
 There are specific error types in typical Swift libraries like [DecodingError](https://developer.apple.com/documentation/swift/decodingerror), [CryptoKitError](https://developer.apple.com/documentation/cryptokit/cryptokiterror) or [ArchiveError](https://developer.apple.com/documentation/applearchive/archiveerror). But it's not visible without documentation, where these errors can emerge.
 
-On the other hand error type erasure has it's place. If an extension point for an API should be provided, it is often to restrictive to expect specific errors to be thrown. `Decodable`s [init(from:)](https://developer.apple.com/documentation/swift/decodable/2894081-init) may be to restrictive with an explicit error type provided by the API.
+On the other hand error type erasure has it's place. If an extension point for an API should be provided, it is often to restrictive to expect specific errors to be thrown. `Decodable`s [init(from:)](https://developer.apple.com/documentation/swift/decodable/2894081-init) may be too restrictive with an explicit error type provided by the API.
 
 Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/blob/master/docs/ErrorHandlingRationale.rst) there is valid usage for optionals and throws and we propose even for a typed throws. It comes down to how explicit an API should be and this can vary substantially based on requirements.
 
