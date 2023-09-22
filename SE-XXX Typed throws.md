@@ -84,7 +84,7 @@ func callAndFeedCat2() -> Result<Cat, CatError> {
 
 ### `Result` is not the go to replacement for `throws` in imperative languages
 
-Using explicit errors with `Result` has major implications for a code base. Because the exception handling mechanism ("goto catch") is not built into the language (like `throws`), you need to do that on your own, mixing the exception handling mechanism with domain logic (same issue we had with manual memory management in Objective-C before ARC).
+Using explicit errors with `Result` has major implications for a code base. Because the exception handling mechanism ("goto catch") is not built into the language (like `throws`), you need to do that on your own, mixing the exception handling mechanism with domain logic.
 
 #### Approach 1: Chaining Results
 
@@ -165,109 +165,23 @@ Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/b
 In general we want to add the possibility to use `throws` with a single, specific error.
 
 ```swift
-func callCat() throws CatError -> Cat
-```
-
-Here is how `throws` with specific error would reduce the issues mentioned in "[Motivation](#motivation)".
-
-### Communicates the same amount of error information like `Result` or `Task`
-
-Compare
-
-```swift
-func callCat() -> Result<Cat, CatError>
-```
-
-with
-
-```swift
-func callCat() throws CatError -> Cat
-```
-
-It now contains the same error information like `Result`.
-
-### Consistent explicitness compared to `Result` or `Task`
-
-`throws` is now consistent in the order of explicitness in comparison to `Result` or `Task`, which makes it easy to convert between these types.
-
-```swift
-func callCat() throws CatError -> Cat
-
-func callAndFeedCat1() -> Result<Cat, CatError> {
-    do {
-        return Result.success(try callCat())
-    } catch let error as CatError {
-        // would compile now, because error is `CatError`
-        return Result.failure(error)
-    }
+func callCat() throws CatError -> Cat {
+  if Int.random(in: 0..<24) < 20 {
+    throw .sleeps
+  }
+  // ...
 }
 ```
 
+The function can only throw instances of `CatError`. This provides contextual type information for all throw sites, so we can write `.sleeps` instead of the more verbose `CatError.sleeps` that's needed with untyped throws. Any attempt to throw any other kind of error out of the function will be an error:
+
 ```swift
-func callAndFeedCat2() -> Result<Cat, CatError> {
-    do {
-        return Result.success(try callCat())
-    } catch let error as CatError {
-        return Result.failure(error)
-    } catch {
-        // this catch clause would become obsolete because the catch is already exhaustive
-    }
+func callCatBadly() throws CatError -> Cat {
+  throw GenericError(message: "sleeping")  // error: GenericError cannot be converted to CatError
 }
 ```
 
-### Code is more self documenting
-
-```swift
-struct RequestCatError: Error {
-    case network, forbidden, notFound, internalServerError, unknown
-}
-
-func requestCat() throws RequestCatError -> Cat
-```
-
-It's now guaranteed which errors can happen.
-
-
-### Drift between thrown errors and catch clauses can be stopped
-
-You have an API with
-
-```swift
-func callCat() throws CatError -> Cat
-```
-
-and you make sure that you are aware of a possible `CatError` by explicitly catching it
-
-```swift
-do {
-    let cat = try callCat()
-} catch let error as CatError {
-    // CatError will be catched here
-}
-```
-
-Now the API gets updated to
-
-```swift
-func callCat() throws TurtleError -> Cat
-```
-
-which would result in non compiling code on your side
-
-```swift
-do {
-    let cat = try callCat()
-} catch let error as CatError { // would not compile, because you catch something that is not thrown
-}
-```
-
-You can now update your `catch` clauses to make sure that you are aware of the new error cases and that you handle them properly.
-
-### `throws` is made for imperative languages
-
-Let's compare the two approaches from above to `throws`, if it would be usable with specific errors.
-
-#### Approach 3: `throws` with specific error
+Maintaining specific error types throughout a function is much easier than when using `Result`, because one can use `try` consistently:
 
 ```swift
 func stringFromArray(_ array: [String], at index: Int, errorMessage: String) throws GenericError -> String {
@@ -282,35 +196,39 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
 }
 ```
 
-The error handling mechanism is pushed aside and you can see the domain logic more clearly.
+The error handling mechanism is pushed aside and you can see the domain logic more clearly. 
 
-#### Error type conversions
+### Concrete error types in catch blocks
 
-Be aware that in all 3 approaches we are omitting the issue of simplifying error type conversions, which can be a topic for another proposal. But here's how it would look like for Approach 1 and 3 without further language constructs.
-
-Example is taken from [Question/Idea: Improving explicit error handling in Swift (with enum operations) - Using Swift - Swift Forums](https://forums.swift.org/t/question-idea-improving-explicit-error-handling-in-swift-with-enum-operations/35335).
-
-Approach 1:
+With typed throws, a throwing function contains the same information about the error type as `Result`, making it easier to convert between the two:
 
 ```swift
-struct FirstNameError: Swift.Error {}
-
-func firstNameResultFromArray(_ array: [String]) -> Result<String, FirstNameError> {
-    guard array.indices.contains(0) else { return Result.failure(FirstNameError()) }
-    return Result.success(array[0])
-}
-
-func userResultFromStrings(strings: [String]) -> Result<User, GenericError>  {
-    return firstNameResultFromArray(strings)
-        .map { User(firstName: $0, lastName: "") }
-        .mapError { _ in
-            // Mapping from `FirstNameError` to a `GenericError`
-            GenericError(message: "First name is missing")
-        }
+func callAndFeedCat1() -> Result<Cat, CatError> {
+    do {
+        return Result.success(try callCat())
+    } catch {
+        // would compile now, because error is `CatError`
+        return Result.failure(error)
+    }
 }
 ```
 
-Approach 3:
+Note that the implicit `error` variable within the catch block has the concrete type `CatError`; there is no need for the existential `any Error`. 
+
+When a `do` statement can throw errors with different concrete types, or involves any calls to functions using untyped throws, the `catch` block will receive an `any Error` type:
+
+```swift
+func callKids() throws KidError -> [Kid] { ... }
+
+do {
+  try callCat()
+  try callKids()
+} catch {
+  // error has type 'any Error', as it does today
+}
+```
+
+When one needs to translate errors of one concrete type to another, use a `do...catch` block around each sequence of calls that produce the same kind of error :
 
 ```swift
 func firstNameResultFromArray(_ array: [String]) throws FirstNameError -> String {
@@ -322,18 +240,52 @@ func userResultFromStrings(strings: [String]) throws GenericError -> User  {
     do {
         let firstName = try stringFromArray(strings, at: 0, errorMessage: "Missing first name")
         return User(firstName: firstName, lastName: "")        
-    } catch let error as FirstNameError {
-        // Mapping from `FirstNameError` to a `GenericError`
+    } catch {
+        // error is a `FirstNameError`, map it to a `GenericError`.
         throw GenericError(message: "First name is missing")
     }
 }
-
 ```
 
-An example with multiple errors can be found here:
+### Throwing `any Error` or `Never`
 
-https://forums.swift.org/t/typed-throw-functions/38860/122.
+Typed throws generalizes over both untyped throws and non-throwing functions. A function specified with `any Error` as its thrown type:
 
+```swift
+func throwsAnything() throws any Error { ... }
+```
+
+is equivalent to untyped throws:
+
+```swift
+func throwsAnything() throws { ... }
+```
+
+Similarly, a function specified with `Never` as its thrown type:
+
+```swift
+func throwsNothing() throws(Never) { ... }
+```
+
+is equivalent to a non-throwing function:
+
+```swift
+func throwsNothing() { }
+```
+
+There is a more general subtyping rule here that says that you can loosen the thrown type, i.e., converting a non-throwing function to a throwing one, or a function that throws a concrete type to one that throws `any Error`. 
+
+### Interconverting between throwing functions and `Result`
+
+Swift's `Result` type has an [`init(catching:)`](https://github.com/apple/swift-evolution/blob/main/proposals/0235-add-result.md#detailed-design) operation that produces a result when calling a throwing closure, but that result always has the existential type `any Error` as its failure type. With this proposal, we can generalize that operation to produce a more specific result:
+
+```swift
+extension Result {
+  init(catching body: throws(Failure) -> Success) { ... }
+}
+```
+
+Now, the expression `Result(catching: callCat)` will produce an instance of type `Result<Cat, CatError>`, relying on type inference to propagate the thrown error type from `callCat` to the `Failure` type. The aforementioned relationship between thrown types specified as `any Error` and `Never` makes this new formulation subsume existing use cases.
 
 ## Detailed design
 
