@@ -697,32 +697,6 @@ func f<E>(e: E) throws(E) { ... }
 
 the function `f` has an inferred requirement `E: Error`. 
 
-### Type inference for `enum`s
-
-A function that `throws` an `enum` based `Error` can avoid to explicitly declare the type, and just leave the case, as the type itself is declared in the function declaration signature.  
-
-```swift
-enum Foo: Error { case bar, baz }
-
-func fooThrower() throws(Foo) {
-    guard someCondition else {
-        throw .bar
-    }
-
-    guard someOtherCondition else {
-        throw .baz
-    }
-}
-```
-
-Assuming it is the only thrown error type in the `do` block, an `enum` based `Error` can have its cases catched, with each case having a separate `catch` clause. When catching cases the type of the `case` can be omitted, as it is inferred from the throwing function.
-
-```swift
-do { try fooThrower() }
-catch .bar { ... }
-catch .baz { ... }
-```
-
 ### Converting between `throws` and `Result`
 
 Having a typed `throws` it would be quite convenient to not being forced to explicitly convert between `throws` and `Result`. Semantically `throws` could be just another syntax for `Result`, which would make both of them more composable.
