@@ -466,7 +466,7 @@ In essence, when there are multiple possible thrown error types, we immediately 
 
 > **Rationale**: While it would be possible to compute a more precise "union" type of different error types, doing so is potentially an expensive operation at compile time and run time, as well as being harder for the programmer to reason about. If in the future it becomes important to tighten up the error types, that could be done in a mostly source-compatible manner.
 
-### `rethrows`
+### Typed`rethrows`
 
 A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
 
@@ -593,9 +593,13 @@ func foo<E>(e: E) throws(E)
 
 `E` would be constrained to `Error`, because it is used in `throws`.
 
-### Subtyping
+### Subtyping rules
 
-#### Between functions
+A function type that throws an error of type `A` is a subtype of a function type that differs only in that it throws an error of type `B` when `A` is a subtype of `B`.  As previously noted, a `throws` function that does not specify the thrown error type will have a thrown type of `any Error`, and a non-throwing function has a thrown error type of `Never`. For subtyping purposes, `Never` is assumed to be a subtype of all error types.
+
+The subtyping rule manifests in a number of places, including function conversions, protocol conformance checking and refinements, and override checking, all of which are described below.
+
+#### Function conversions
 
 Having related errors and a non-throwing function
 
@@ -624,59 +628,17 @@ Erasing the specific error type is possible
 let f4: () throws -> Void = f3
 ```
 
-In general (assuming function parameters and return type are compatible):
-
-- `() -> Void` is subtype of `() throws(B) -> Void`
-- `() throws(B) -> Void` is subtype of `() throws -> Void`
-- `() throws(B) -> Void` is subtype of `() throws(A) -> Void` if `B` is subtype of `A`
-
-`#openquestion` For the semantic analysis it was suggested that every function is interpreted as a throwing function leading to this equivalences
-
-```swift
-() -> Void === () throws(Never) -> Void
-() throws -> Void === () throws(Error) -> Void
-```
-
-But it should be discussed if these equivalences should become part of the syntax.
-
-#### Catching errors that are subtypes
-
-Following the current behaviour of `catch` clauses the first clause that matches is chosen.
-
-```swift
-class BaseError: Error {}
-class SpecificError: BaseError {}
-
-func throwBase() throws {
-    throw SpecificError()
-}
-
-do {
-    try throwBase()
-} catch let error as SpecificError {
-    print("specific") // uses this clause
-} catch let error as BaseError {
-    print("base")
-}
-
-do {
-    try throwBase()
-} catch let error as BaseError {
-    print("base") // uses this clause
-} catch let error as SpecificError {
-    print("specific")
-}
-```
-
-#### Protocol refinements
+#### Protocol conformance and refinements
 
 Protocols should have the possibility to conform and refine other protocols containing throwing functions based on the subtype relationship of their functions. This way it would be possible to throw a more specialised error or don't throw an error at all.
-
-Examples from https://forums.swift.org/t/typed-throw-functions/38860/223
 
 ```swift
 protocol Throwing {
     func f() throws
+}
+
+struct ConcreteNotThrowing: Throwing {
+    func f() { } // okay, doesn't have to throw  
 }
 
 protocol NotThrowing: Throwing {
@@ -696,6 +658,10 @@ protocol ThrowingColoredError: Throwing {
     func f() throws(ColoredError)
 }
 
+struct ConcreteThrowingBlueError: ThrowingColoredError {
+    func f() throws(BlueError) { ... } // okay, subtype
+}
+
 protocol ThrowingBlueError: ThrowingColoredError {
     // Refinement
     func f() throws(BlueError)
@@ -704,6 +670,27 @@ protocol ThrowingBlueError: ThrowingColoredError {
 protocol ThrowingDeepBlueErrorError: ThrowingBlueError {
     // Refinement
     func f() throws(DeepBlueError)
+}
+```
+
+#### Override checking
+
+A declaration in a subclass that overrides a superclass declaration can be a subtype of the superclass declaration, for example:
+
+```swift
+class Superclass {
+  func f() throws { }
+  func g() throws(ColoredError) { }
+}
+
+class Subclass: Superclass {
+  override func f() throws(ColoredError) { } // okay
+  override func g() throws(BlueError) { }   // okay
+}
+
+class Subsubclass: Subclass {
+  override func f() { } // okay
+  override func g() throws(DeepBlueError) { }  // okay
 }
 ```
 
