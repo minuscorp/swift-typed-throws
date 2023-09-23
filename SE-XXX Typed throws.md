@@ -558,41 +558,6 @@ func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to re
 
 However, this seems unlikely to cause problems in practice, and the only real way to avoid it would be to prohibit the use of `rethrows` (with no specified thrown type) when any of the closure parameters use typed throws.
 
-### Usage in Protocols
-
-We can define typed `throws` functions in protocols with specific error types that are visible to the caller
-
-```swift
-private struct PrivateCatError: Error {}
-public struct PublicCatError: Error {}
-
-protocol CatFeeder {
-    public func throwPrivateCatErrorOnly() throws -> CatStatus // compiles
-    public func throwPrivateCatErrorExplicitly() throws (PrivateCatError) -> CatStatus // won't compile 
-    public func throwPublicCatErrorExplicitly() throws (PublicCatError) -> CatStatus // compiles
-}
-```
-
-Or we can use `associatedtypes` that (implicitly) conform to `Swift.Error`.
-
-```swift
-protocol CatFeeder {
-    associatedtype CatError: Error // The explicit Error conformance can be omited if there's a consumer that defines the type as a thrown one.
-    
-    func feedCat() throws(CatError) -> CatStatus
-}
-```
-
-### Usage with generics
-
-Typed `throws` can be used in combination with generic functions by making the error type generic.
-
-```swift
-func foo<E>(e: E) throws(E)
-```
-
-`E` would be constrained to `Error`, because it is used in `throws`.
-
 ### Subtyping rules
 
 A function type that throws an error of type `A` is a subtype of a function type that differs only in that it throws an error of type `B` when `A` is a subtype of `B`.  As previously noted, a `throws` function that does not specify the thrown error type will have a thrown type of `any Error`, and a non-throwing function has a thrown error type of `Never`. For subtyping purposes, `Never` is assumed to be a subtype of all error types.
@@ -693,6 +658,44 @@ class Subsubclass: Subclass {
   override func g() throws(DeepBlueError) { }  // okay
 }
 ```
+
+### Associated type inference
+
+An associated type can be used as the thrown error type in other protocol requirements. For example:
+
+```swift
+protocol CatFeeder {
+    associatedtype FeedError: Error 
+    
+    func feedCat() throws(FeedError) -> CatStatus
+}
+```
+
+When a concrete type conforms to such a protocol, the associated type can be inferred from the declarations that satisfy requirements that mention the associated type in a typed throws clause. For the purposes of this inference, a non-throwing function has `Never` as its error type and an untyped `throws` function has `any Error` as its error type. For example:
+
+```swift
+struct Tabby: CatFeeder {
+  func feedCat() throws(CatError) -> CatStatus { ... } // okay, FeedError is inferred to CatError
+}
+
+struct Sphynx: CatFeeder {
+  func feedCat() throws -> CatStatus { ... } // okay, FeedError is inferred to any Error
+}
+
+struct Ragdoll: CatFeeder {
+  func feedCat() -> CatStatus { ... } // okay, FeedError is inferred to Never
+}
+```
+
+### `Error` requirement inference
+
+When a function signature uses a generic parameter or associated type as a thrown type, that generic parameter or associated type is implicitly inferred to conform to the `Error` type. For example, given this declaration:
+
+```swift
+func f<E>(e: E) throws(E) { ... }
+```
+
+the function `f` has an inferred requirement `E: Error`. 
 
 ### Type inference for `enum`s
 
