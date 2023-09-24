@@ -611,6 +611,12 @@ is equivalent to
 func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
 ```
 
+#### Throwing in asynchronous `for..in` loops
+
+The asynchronous `for..in` loop uses an underspecified notion of ["rethrowing" protocol conformances](https://github.com/apple/swift-evolution/blob/main/proposals/0298-asyncsequence.md#rethrows) to make it possible for iteration over an asynchronous sequence to be throwing when the sequence's `next()` operation may throw, and non-throwing otherwise. With typed throws, the `AsyncSequence` protocol will gain an associated type `Failure` that provides the thrown error type for the iterator's `next()` operation (see details in the section *Standard library adoption*).
+
+When a `for..in` loop iterators over an `AsyncSequence`, the iteration can throw the `Failure` type of the `AsyncSequence`. When the `Failure` type is `Never`, the loop cannot throw and does not require `try`. This provides a mechanism for handling throwing and non-throwing asynchronous `for..in` loops consistently.
+
 ### Subtyping rules
 
 A function type that throws an error of type `A` is a subtype of a function type that differs only in that it throws an error of type `B` when `A` is a subtype of `B`.  As previously noted, a `throws` function that does not specify the thrown error type will have a thrown type of `any Error`, and a non-throwing function has a thrown error type of `Never`. For subtyping purposes, `Never` is assumed to be a subtype of all error types.
@@ -804,7 +810,7 @@ func f<E>(e: E) throws(E) { ... }
 
 the function `f` has an inferred requirement `E: Error`. 
 
-### Standard library adjustments
+### Standard library adoption
 
 There are a number of places in the standard library where the adoption of typed throws will help maintain thrown types through user code. This section details those changes to the standard library:
 
@@ -892,27 +898,36 @@ public protocol AsyncIteratorProtocol {
 Introduce a new associated type `Failure` into this protocol to use as the thrown error type of `next()`, i.e.,
 
 ```swift
-public protocol AsyncIteratorProtocol {
-  associatedtype Element
-  associatedtype Failure: Error = any Error
-  mutating func next() async throws(Failure) -> Element?
-}
+associatedtype Failure: Error = any Error
+mutating func next() async throws(Failure) -> Element?
 ```
 
 Then introduce an associated type `Failure` into `AsyncSequence` that provides a more convenient name for this type, i.e.,
 
 ```swift
-protocol AsyncSequence {
-  associatedtype AsyncIterator: AsyncIteratorProtocol 
-      where AsyncIterator.Element == Element, AsyncIterator.Failure == Failure
-  associatedtype Element
-  associatedtype Failure
+associatedtype Failure where AsyncIterator.Failure == Failure
+```
 
+With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
+
+With the new `Failure` type in place, we can adopt [primary asociated types](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md) for these protocols:
+
+```swift
+public protocol AsyncIteratorProtocol<Element, Failure> {
+  associatedtype Element
+  associatedtype Failure: Error = any Error
+  mutating func next() async throws(Failure) -> Element?
+}
+
+public protocol AsyncSequence<Element, Failure> {
+  associatedtype AsyncIterator: AsyncIteratorProtocol
+  associatedtype Element where AsyncIterator.Element == Element
+  associatedtype Failure where AsyncIterator.Failure == Failure
   __consuming func makeAsyncIterator() -> AsyncIterator
 }
 ```
 
-With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
+This allows the use of `AsyncSequence` with both opaque types (`some AsyncSequence<String, any Error>`) and existential types (`any AsyncSequence<Image, NetworkError>`). 
 
 #### Operations that `rethrow`
 
