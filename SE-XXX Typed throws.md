@@ -93,7 +93,7 @@ If you use `Result` in a functional (i.e. monadic) way, you need extensive use o
 Example is taken from [Question/Idea: Improving explicit error handling in Swift (with enum operations) - Using Swift - Swift Forums](https://forums.swift.org/t/question-idea-improving-explicit-error-handling-in-swift-with-enum-operations/35335).
 
 ```swift
-struct GenericError: Swift.Error {
+struct GenericError: Error {
     let message: String
 }
 
@@ -384,7 +384,7 @@ var value: Success {
 
 #### Throwing within a function that declares a typed error
 
-Any function, closure or function type that is marked as `throws` can declare which type the function throws. That type, which is called the *thrown error type*, must conform to the `Swift.Error` protocol.
+Any function, closure or function type that is marked as `throws` can declare which type the function throws. That type, which is called the *thrown error type*, must conform to the `Error` protocol.
 
 Every uncaught error that can be thrown from the body of the function must be convertible to the thrown error type. This applies to both explicit `throw` statements and any errors thrown by other calls (as indicated by a `try`). For example:
 
@@ -932,30 +932,23 @@ public func map<U, E>(
 ) rethrows(E) -> U?
 ```
 
-### Library Evolution
+## Source compatibility
 
-There are many concerns about library evolution and compatibility.
+This proposal has called out three specific places where the introduction of typed throws into the language will affect source compatiblity. In each place, a minimal source-breaking aspect of the change has been separated out so that it will be enabled only in the next major language version (Swift 6), and Swift 5 has these additional limitations:
 
-#### Non `@frozen enum`s
+* For `do...catch`, the caught error type will be `any Error` if there are no `try` expressions.
+* For `rethrows`, untyped closure parameters are treated as throwing `any Error`
+* For closure thrown error type inference, the thrown error type will be `any Error` if there are no `try` expressions.
 
-Our approach is quite similar to what happens with switch cases:
+To make use of the full typed throws semantics in Swift 5, developers can enable the [upcoming feature flag](https://github.com/apple/swift-evolution/blob/main/proposals/0362-piecemeal-future-features.md) named `FullTypedThrows`. 
 
-```swift
-enum NonFrozenEnum: Error { case cold, warm, hot }
+Note that the source compatibility arguments in this proposal are there to ensure that Swift code that does not use typed throws will continue to work in the same way it always has. Once a function adopts typed throws, the effect of typed throws can then ripple to its callers.
 
-func wheathersLike() throws(NonFrozenEnum) -> Weather
+## Effect on ABI stability
 
-try { wheathersLike() } 
-catch .cold { ... }
-catch .warm { ... }
-catch .hot { ... } // warning: all cases were catched but NonFrozenEnum might have additional unknown values.
-// So if the warning is resolved:
-catch let error as NonFrozenEnum { ... }
-```
+The ABI between an function with an untyped throws and one that uses typed throws will be different, so that typed throws can benefit from knowing the precise type. For most of the standard library changes, an actual ABI break can be avoided because the implementations can make use of [`@backDeploy`](https://github.com/apple/swift-evolution/blob/main/proposals/0376-function-back-deployment.md). However, the suggested change to `AsyncIteratorProtocol` might not be able to be made in a manner that does not break ABI stability.
 
-So it maintains backwards compatibility emiting a warning instead of an error. An error could be generated if this proposal doesn't need to keep backwards compatible with previous Swift versions.
-
-#### API Developer recommendations
+## Effect on API resilience
 
 Assuming a current API
 
@@ -990,166 +983,12 @@ enum DataLoaderError {
 
 - If you don't need to throw it, because you think your API user does not need to know this error, then you map it to the error that represents the `FileSystemError` (most of the time in a more abstract sense). In this example you would throw a `DataLoaderError` with another message.
 
-- If you think you don't know what will happen in the future and breaking changes should be avoided as much as possible, then just throw `Swift.Error`. But keep in mind that you are less explicit about what can happen and also take the possibility for the API user to rely on the existence of the error (by using the compiler) leading to issues mentioned in [Motivation](#motivation).
+- If you think you don't know what will happen in the future and breaking changes should be avoided as much as possible, then just throw `any Error`. But keep in mind that you are less explicit about what can happen and also take the possibility for the API user to rely on the existence of the error (by using the compiler) leading to issues mentioned in [Motivation](#motivation).
 
 - If you provide an extension point to your API like a protocol (e.g. a `DataLoader` like above) that can be used to customize the behaviour of your API, then try to omit forcing specific errors on the API user. Most of the time you as an extension point provider just want to know that something went wrong. If you need multiple cases of errors then keep the amount as small as possible and eventually do compatibility converting on the API developer side outside of the extension point implementation. "Only ask for what you need" applies here.
 
-### Autocompletion
-
-Because we can't infer types in the general `catch` clause without breaking source compatibility, we are suggesting to use autocompletion while adding missing `catch` clauses. Only `catch` clauses that are missing from the current `do` statement are suggested (including the general `catch` clause).
-
-### Optional Enhancement: Reducing `catch` clause verbosity
-
-`#openquestion`
-
-Because we now need to explicitly catch specific errors in `catch` clauses a lot, a shorter form is being suggested.
-Having to write `catch let error as FooError` seems a bit inconsistent with the rest of how `catch` works, as `error` is inferred to be a constant of type `Error` in the general `catch` clause without mentioning `let error`.
-
-
-```swift
-do { ... }
-// Here we have to explicitly declare `error` as a constant.
-catch let error as FooError { ... }
-// Whereas here you have `error` for free.
-catch { ... }
-```
-
-This inconsistency can induce confusion when writing down different specific and general `catch` clauses, having to declare `error` on your own in one case and omitting it in the other.
-
-For this the grammar would need an update in [catch-pattern](https://docs.swift.org/swift-book/ReferenceManual/Statements.html#grammar_catch-pattern) in the following way:
-
-
-```
-catch-pattern -> type-identifier
-```
-
-Example:
-
-```swift
-do {
-    ...
-} catch DogError {
-    // `error` is `DogError`
-}
-```
-
-This comes in handy with `class` and `struct` error types, but most of all with `enum` types.
-
-```swift
-enum SomeErrors: Error {
-    case foo, bar, baz
-}
-
-func theErrorMaker() throws(SomeErrors)
-
-do {
-    try theErrorMaker()
-}
-catch .foo { ... }
-catch .bar { ... }
-catch .baz { ... }
-```
-
-This behaviour and syntax in general resembles a lot how `switch` cases work because:
-
-1. The type can be ignored, as it is inferred.
-2. They must be exhaustive.
-
-In scenarios where different types are involved, each one has the same treatment from the grammar side:
-
-```swift
-
-do {
-    try throwsClass() // throws MyClass
-    try throwsStruct() // throws MyStruct
-    try throwsEnum() // throws MyEnum { case one, two }
-} 
-catch MyClass { ... }
-catch MyStruct { ... }
-catch .one { ... }
-catch .two { ... } 
-```
-
-And where multiple enums are being caught, it would be only needed to specify the type of those cases that were repeated in every enum.
-
-```swift
-enum One: Error { case one, two, three }
-enum Two: Error { case two, three, four }
-
-
-do { ... }
-catch .one { ... }
-catch One.two { ... } // Disambiguate the type.
-catch One.three { ... }
-catch Two.two { ... }
-catch Two.three { ... }
-catch .four { ... }
-```
-
-These scenarios are uncommon but possible, also there's always room to `catch One` and handle each case in a switch statement.
-
-
-This change in the expression is merely additive and has no impact on the current source.
-
-## Source compatibility
-
-We decided to keep the inference behaviour of the general `catch` clause (`error: Error`) to keep source compatibility. But if breaking source compatibility is an option, we could change this
-
-```swift
-do {
-    let cat = try callCat() // throws `CatError`
-    throw CatError
-} catch let error as CatError {
-    // error is `CatError`
-}
-// this is exhaustive
-```
-
-to this
-
-```swift
-do {
-    let cat = try callCat() // throws `CatError`
-    throw CatError
-} catch {
-    // error is inferred as `CatError`
-}
-// this is exhaustive
-```
-
-There is a scenario, that potentially breaks source compatibility (original post: https://forums.swift.org/t/typed-throw-functions/38860/178):
-
-```swift
-struct Foo: Error { ... }
-struct Bar: Error { ... }
-var throwers = [{ throw Foo() }] // Inferred as `Array<() throws -> ()>`, or `Array<() throws(Foo) -> ()>`?
-throwers.append({ throw Bar() }) // Compiles today, error if we infer `throws(Foo)`
-```
-
-The combination of type inference and `throw` can lead to trouble, because with more specific error types supported for throwing statements, the inferred type needs to change to the more specific type. At least this would be the intuitive behaviour.
-
-Another example would be updating Result's [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) and [get()](https://developer.apple.com/documentation/swift/result/3139397-get).
-
-**In general: All locations where an error will be inferred or updated to a more specific error can cause trouble with source compatibility.**
-
-## Effect on ABI stability
-
-[swift/Mangling.rst at master · apple/swift](https://github.com/apple/swift/blob/master/docs/ABI/Mangling.rst)
-
-```
-function-signature ::= params-type params-type async? throws-clause?
-```
-
-`#openquestion` Any insights are appreciated.
-
-
-
-Note: the change to `AsyncIteratorProtocol` breaks ABI unless we do something tricky. Hmm....
-
-## Effect on API resilience
-
-`#openquestion` Any insights are appreciated.
-
 ## Alternatives considered
 
-See [Motivation](#motivation)
+TODO:
+
+* Union error types
