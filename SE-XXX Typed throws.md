@@ -611,6 +611,12 @@ is equivalent to
 func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
 ```
 
+#### Throwing in asynchronous `for..in` loops
+
+The asynchronous `for..in` loop uses an underspecified notion of ["rethrowing" protocol conformances](https://github.com/apple/swift-evolution/blob/main/proposals/0298-asyncsequence.md#rethrows) to make it possible for iteration over an asynchronous sequence to be throwing when the sequence's `next()` operation may throw, and non-throwing otherwise. With typed throws, the `AsyncSequence` protocol will gain an associated type `Failure` that provides the thrown error type for the iterator's `next()` operation (see details in the section *Standard library adoption*).
+
+When a `for..in` loop iterators over an `AsyncSequence`, the iteration can throw the `Failure` type of the `AsyncSequence`. When the `Failure` type is `Never`, the loop cannot throw and does not require `try`. This provides a mechanism for handling throwing and non-throwing asynchronous `for..in` loops consistently.
+
 ### Subtyping rules
 
 A function type that throws an error of type `A` is a subtype of a function type that differs only in that it throws an error of type `B` when `A` is a subtype of `B`.  As previously noted, a `throws` function that does not specify the thrown error type will have a thrown type of `any Error`, and a non-throwing function has a thrown error type of `Never`. For subtyping purposes, `Never` is assumed to be a subtype of all error types.
@@ -804,7 +810,7 @@ func f<E>(e: E) throws(E) { ... }
 
 the function `f` has an inferred requirement `E: Error`. 
 
-### Standard library adjustments
+### Standard library adoption
 
 There are a number of places in the standard library where the adoption of typed throws will help maintain thrown types through user code. This section details those changes to the standard library:
 
@@ -892,27 +898,36 @@ public protocol AsyncIteratorProtocol {
 Introduce a new associated type `Failure` into this protocol to use as the thrown error type of `next()`, i.e.,
 
 ```swift
-public protocol AsyncIteratorProtocol {
-  associatedtype Element
-  associatedtype Failure: Error = any Error
-  mutating func next() async throws(Failure) -> Element?
-}
+associatedtype Failure: Error = any Error
+mutating func next() async throws(Failure) -> Element?
 ```
 
 Then introduce an associated type `Failure` into `AsyncSequence` that provides a more convenient name for this type, i.e.,
 
 ```swift
-protocol AsyncSequence {
-  associatedtype AsyncIterator: AsyncIteratorProtocol 
-      where AsyncIterator.Element == Element, AsyncIterator.Failure == Failure
-  associatedtype Element
-  associatedtype Failure
+associatedtype Failure where AsyncIterator.Failure == Failure
+```
 
+With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
+
+With the new `Failure` type in place, we can adopt [primary asociated types](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md) for these protocols:
+
+```swift
+public protocol AsyncIteratorProtocol<Element, Failure> {
+  associatedtype Element
+  associatedtype Failure: Error = any Error
+  mutating func next() async throws(Failure) -> Element?
+}
+
+public protocol AsyncSequence<Element, Failure> {
+  associatedtype AsyncIterator: AsyncIteratorProtocol
+  associatedtype Element where AsyncIterator.Element == Element
+  associatedtype Failure where AsyncIterator.Failure == Failure
   __consuming func makeAsyncIterator() -> AsyncIterator
 }
 ```
 
-With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
+This allows the use of `AsyncSequence` with both opaque types (`some AsyncSequence<String, any Error>`) and existential types (`any AsyncSequence<Image, NetworkError>`). 
 
 #### Operations that `rethrow`
 
@@ -987,9 +1002,15 @@ enum DataLoaderError {
 
 - If you provide an extension point to your API like a protocol (e.g. a `DataLoader` like above) that can be used to customize the behaviour of your API, then try to omit forcing specific errors on the API user. Most of the time you as an extension point provider just want to know that something went wrong. If you need multiple cases of errors then keep the amount as small as possible and eventually do compatibility converting on the API developer side outside of the extension point implementation. "Only ask for what you need" applies here.
 
+## Future directions
+
+### Specific thrown error types for distributed actors
+
+The transport mechanism for [distributed actors](https://github.com/apple/swift-evolution/blob/main/proposals/0344-distributed-actor-runtime.md), `DistributedActorSystem`, can throw an error due to transport failures. This error is currently untyped, but it should be possible to adopt typed throws (with a `Failure` associated type in `DistributedActorSystem` and mirrored in `DistributedActor`) so that the distributed actor system can be more specific about the kind of error it throws. Calls to a distributed actor from outside the actor (i.e., that could be on a different node) would then throw `errorUnion(Failure, E)` where the `E` is the type that the function normally throws.
+
 ## Alternatives considered
 
-### Multiple throw error types
+### Multiple thrown error types
 
 This proposal specifies that a function may throw at most one error type, and if there is any reason to throw more than one error type, one should use `any Error` (or the equivalent untyped `throws` spelling). It would be possible to support multiple error types, e.g.,
 
@@ -1006,3 +1027,37 @@ func fetchData() throws(FileSystemError | NetworkError) -> Data
 ```
 
 Trying to introduce multiple thrown error types directly into the language would introduce nearly all of the complexity of sum types, but without the generality, so this proposal only considers a single thrown error type.
+
+### Treat all uninhabited thrown error types as nonthrowing
+
+This proposal specifies that a function type whose thrown error type is `Never` is equivalent to a function type that does not throw. This rule could be generalized from `Never` to any *uninhabited* type, i.e., any type for which we can structurally determine that there is no runtime value. The simplest uninhabited type is a frozen enum with no cases, which is how `Never` itself is defined:
+
+```swift
+@frozen public enum Never {}
+```
+
+However, there are other forms of uninhabited type: a `struct` or `class` with a stored property of uninhabited type is uninhabited, as is an enum where all cases have an associated value containing an uninhabited type (a generalization of the "no cases" rule mentioned above). This can happen generically. For example, a simple `Pair` struct:
+
+```swift
+struct Pair<First, Second> {
+  var first: First
+  var second Second
+}
+```
+
+will be uninhabited when either `First` or `Second` is uninhabited. The `Either` enum will be uninhabited when both of its generic arguments are uninhabited. `Optional` is never uninhabited, because it's always possible to create a `nil` value.
+
+It is possible to generalize the rule about non-throwing function types to consider any function type with an uninhabited thrown error type to be equivalent to a non-throwing function type (all other things remaining equal). However, we do not do so due to implementation concerns: the check for a type being uninhabited is nontrivial, requiring one to walk all of the storage of the type, and (in the presence of indirect enum cases and reference types) is recursive, making it a potentially expensive computation.  Crucially, this computation will need to be performed at runtime, to produce proper function type metadata within generic functions:
+
+```swift
+func f<E: Error>(_: E.Type)) {
+  typealias Fn = () throws(E) -> Void
+  let meta = Fn.self
+}
+
+f(Never.self)                // Fn should be equivalent to () -> Void
+f(Either<Never, Never>.self) // Fn should be equivalent to () -> Void
+f(Pair<Never, Int>.self)     // Fn should be equivalent to () -> Void
+```
+
+The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. Therefore, we stick with the much simpler rule where `Never` is the only uninhabited type considered to be special.
