@@ -466,7 +466,7 @@ In essence, when there are multiple possible thrown error types, we immediately 
 
 > **Rationale**: While it would be possible to compute a more precise "union" type of different error types, doing so is potentially an expensive operation at compile time and run time, as well as being harder for the programmer to reason about. If in the future it becomes important to tighten up the error types, that could be done in a mostly source-compatible manner.
 
-### Typed`rethrows`
+### Typed `rethrows`
 
 A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
 
@@ -659,7 +659,51 @@ class Subsubclass: Subclass {
 }
 ```
 
-### Associated type inference
+### Type inference
+
+The type checker can infer thrown error types in a number of different places, making it easier to carry specific thrown type information through a program without additional annotation. This section covers the various ways in which thrown errors interact with type inference.
+
+#### Closure thrown type inference
+
+Function declarations must always explicitly specify whether they throw, optionally providing a specific thrown error type. For closures, whether they throw or not is inferred by the Swift compiler. Specifically, the Swift compiler looks at the structure of body of the closure. If the body of the closure contains a throwing site (either a `throw` statement or a `try` expression) that is not within an exhaustive `do...catch`  (i.e., one that has an unconditional `catch` clause), then the closure is inferred to be `throws`. Otherwise, it is non-throwing. Here are some examples:
+
+```swift
+{ throw E() } // throws
+
+{ try call() } // throws
+
+{ 
+  do {
+    try call()
+  } catch let e as CatError {
+    // ...
+  }
+} // throws, the do...catch is not exhaustive
+
+{ 
+  do {
+    try call()
+  } catch e {}
+    // ...
+  }
+} // does not throw, the do...catch is exhaustive
+```
+
+With typed throws, the closure type could be inferred to have a typed error by considering all of the throwing sites that aren't caught (let each have a thrown type `Ei`) and then inferring the closure's thrown error type to be `errorUnion(E1, E2, ... EN)`. 
+
+> **Swift 6**: This inference rule will change the thrown error types of existing closures that throw concrete types. For example, the following closure:
+>
+> ```swift
+> { 
+>   if Int.random(in: 0..<24) < 20 {
+>     throw CatError.asleep
+>   }
+> }
+> ```
+>
+> will currently be inferred as `throws`. With the rule specified here, it will be inferred as `throws(CatError)`. This could break some code that depends on the precisely inferred type. Therefore, this closure inference rule will be delayed until Swift 6.
+
+#### Associated type inference
 
 An associated type can be used as the thrown error type in other protocol requirements. For example:
 
@@ -687,7 +731,7 @@ struct Ragdoll: CatFeeder {
 }
 ```
 
-### `Error` requirement inference
+#### `Error` requirement inference
 
 When a function signature uses a generic parameter or associated type as a thrown type, that generic parameter or associated type is implicitly inferred to conform to the `Error` type. For example, given this declaration:
 
