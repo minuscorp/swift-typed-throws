@@ -989,6 +989,20 @@ enum DataLoaderError {
 
 ## Alternatives considered
 
-TODO:
+### Multiple throw error types
 
-* Union error types
+This proposal specifies that a function may throw at most one error type, and if there is any reason to throw more than one error type, one should use `any Error` (or the equivalent untyped `throws` spelling). It would be possible to support multiple error types, e.g.,
+
+```swift
+func fetchData() throws(FileSystemError, NetworkError) -> Data
+```
+
+However, this change would introduce a significant amount of complexity in the type system, because everywhere that deals with thrown errors would have to deal with an arbitrary set of thrown errors.
+
+A more reasonable direction to support this use case would be to introduce a form of anonymous enum (often called a *sum* type) into the language itself, where the type `A | B` can be either an `A` or ` B`. With such a feature in place, one could express the function above as:
+
+```swift
+func fetchData() throws(FileSystemError | NetworkError) -> Data
+```
+
+Trying to introduce multiple thrown error types directly into the language would introduce nearly all of the complexity of sum types, but without the generality, so this proposal only considers a single thrown error type.
