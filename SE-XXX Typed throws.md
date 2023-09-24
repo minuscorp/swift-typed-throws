@@ -380,7 +380,9 @@ var value: Success {
 }
 ```
 
-### Throwing within a function that declares a typed error
+### Throwing and catching with typed throws
+
+#### Throwing within a function that declares a typed error
 
 Any function, closure or function type that is marked as `throws` can declare which type the function throws. That type, which is called the *thrown error type*, must conform to the `Swift.Error` protocol.
 
@@ -416,7 +418,7 @@ func untypedThrows() throws {
 
 Therefore, these rules subsume those of untyped throws, and no existing code will change behavior.
 
-### Catching typed thrown errors 
+#### Catching typed thrown errors 
 
 A `do...catch` block is used to catch and process thrown errors. With only untyped errors, the type of the error thrown from inside the `do` block is always `any Error`. In the presence of typed throws, the type of the error thrown from inside the `do` block depends on the specific throwing sites. 
 
@@ -466,7 +468,7 @@ In essence, when there are multiple possible thrown error types, we immediately 
 
 > **Rationale**: While it would be possible to compute a more precise "union" type of different error types, doing so is potentially an expensive operation at compile time and run time, as well as being harder for the programmer to reason about. If in the future it becomes important to tighten up the error types, that could be done in a mostly source-compatible manner.
 
-### Typed `rethrows`
+#### Typed `rethrows`
 
 A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
 
@@ -851,7 +853,7 @@ protocol AsyncSequence {
 
 With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
 
-### Operations that `rethrow`
+#### Operations that `rethrow`
 
 The standard library contains a large number of operations that `rethrow`. In all cases, the standard library will only throw from a call to one of the closure arguments: it will never substitute a different thrown error type. Therefore, update every `rethrows` function in the standard library to carry the thrown error type from the closure parameter to the result, i.e., the optional `map` operation will be change from:
 
