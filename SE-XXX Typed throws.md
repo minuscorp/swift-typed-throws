@@ -989,7 +989,7 @@ enum DataLoaderError {
 
 ## Alternatives considered
 
-### Multiple throw error types
+### Multiple thrown error types
 
 This proposal specifies that a function may throw at most one error type, and if there is any reason to throw more than one error type, one should use `any Error` (or the equivalent untyped `throws` spelling). It would be possible to support multiple error types, e.g.,
 
@@ -1006,3 +1006,37 @@ func fetchData() throws(FileSystemError | NetworkError) -> Data
 ```
 
 Trying to introduce multiple thrown error types directly into the language would introduce nearly all of the complexity of sum types, but without the generality, so this proposal only considers a single thrown error type.
+
+### Treat all uninhabited thrown error types as nonthrowing
+
+This proposal specifies that a function type whose thrown error type is `Never` is equivalent to a function type that does not throw. This rule could be generalized from `Never` to any *uninhabited* type, i.e., any type for which we can structurally determine that there is no runtime value. The simplest uninhabited type is a frozen enum with no cases, which is how `Never` itself is defined:
+
+```swift
+@frozen public enum Never {}
+```
+
+However, there are other forms of uninhabited type: a `struct` or `class` with a stored property of uninhabited type is uninhabited, as is an enum where all cases have an associated value containing an uninhabited type (a generalization of the "no cases" rule mentioned above). This can happen generically. For example, a simple `Pair` struct:
+
+```swift
+struct Pair<First, Second> {
+  var first: First
+  var second Second
+}
+```
+
+will be uninhabited when either `First` or `Second` is uninhabited. The `Either` enum will be uninhabited when both of its generic arguments are uninhabited. `Optional` is never uninhabited, because it's always possible to create a `nil` value.
+
+It is possible to generalize the rule about non-throwing function types to consider any function type with an uninhabited thrown error type to be equivalent to a non-throwing function type (all other things remaining equal). However, we do not do so due to implementation concerns: the check for a type being uninhabited is nontrivial, requiring one to walk all of the storage of the type, and (in the presence of indirect enum cases and reference types) is recursive, making it a potentially expensive computation.  Crucially, this computation will need to be performed at runtime, to produce proper function type metadata within generic functions:
+
+```swift
+func f<E: Error>(_: E.Type)) {
+  typealias Fn = () throws(E) -> Void
+  let meta = Fn.self
+}
+
+f(Never.self)                // Fn should be equivalent to () -> Void
+f(Either<Never, Never>.self) // Fn should be equivalent to () -> Void
+f(Pair<Never, Int>.self)     // Fn should be equivalent to () -> Void
+```
+
+The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. Therefore, we stick with the much simpler rule where `Never` is the only uninhabited type considered to be special.
