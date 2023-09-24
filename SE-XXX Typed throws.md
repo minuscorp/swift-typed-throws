@@ -468,6 +468,19 @@ In essence, when there are multiple possible thrown error types, we immediately 
 
 > **Rationale**: While it would be possible to compute a more precise "union" type of different error types, doing so is potentially an expensive operation at compile time and run time, as well as being harder for the programmer to reason about. If in the future it becomes important to tighten up the error types, that could be done in a mostly source-compatible manner.
 
+The semantics specified here are not fully source compatible with existing Swift code. A `do...catch` block that contains `throw` statements of a single concrete type (and no other throwing sites) might depend on the error being caught as `any Error`. Here is a contrived example:
+
+```swift
+do {
+  throw CatError.asleep
+} catch {
+  var e = error   // currently has type any Error, will have type CatError
+  e = KidsError() // currently well-formed, will become an error
+}
+```
+
+> **Swift 6**: To prevent this source compatibility issue, we can refine the rule slightly for Swift 5 code bases to specify that the caught error type must be `any Error` if there are no `try` expressions in the `do` statement. That way, one can only get a caught error type more specific than `any Error` by calling a function that is already making use of typed throws.
+
 #### Typed `rethrows`
 
 A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
@@ -529,7 +542,7 @@ func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
 func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows(E) -> [T]
 ```
 
-If there are multiple closure parameters that have different thrown error types, or if any of the closure parameters use untyped throws, the rethrown type will be `any Error`.
+If there are multiple closure parameters that have different thrown error types, the rethrown type will be `any Error`.
 
 ```swift
 func manyErrors<E1: Error, E2: Error>(
@@ -538,27 +551,43 @@ func manyErrors<E1: Error, E2: Error>(
 ) rethrows { ... } // equivalent to rethrows(any Error)
 ```
 
-There is a small chance of this rule causing confusion, because while `throws` is equivalent to `throws(any Error)`, `rethrows` will infer the error type differently. It is somewhat contrived, but one could imagine an API that begins like this:
+>  **Note**: There is a small chance of this rule causing confusion, because while `throws` is equivalent to `throws(any Error)`, `rethrows` will infer the error type differently. It is somewhat contrived, but one could imagine an API that begins like this:
+>
+> ```swift
+> func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
+>   try f()
+> }
+> ```
+>
+> possibly evolving to try to translate the error:
+>
+> ```swift
+> func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
+>   do {
+> 	  try f()
+> 	} catch {
+>     throw GenericError(message: "\(error)") // error: GenericError is not an E
+>   }
+> }
+> ```
+>
+> However, this seems unlikely to cause problems in practice, and the only real way to avoid it would be to prohibit the use of `rethrows` (with no specified thrown type) when any of the closure parameters use typed throws.
+
+The vast majority of `rethrows` functions will directly throw whatever is thrown from their closure parameters, without generating their own errors or performing any translation. However, the simplest formulation of a rethrowing function such as `map`:
 
 ```swift
-func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
-  try f()
-}
+func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
 ```
 
-possibly evolving to try to translate the error:
+says that `map` can throw `any Error` whenever its `transform` argument throws an exception, i.e., it will lose typed throws information. A more useful formulation is what is proposed above, i.e.,
 
 ```swift
-func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
-  do {
-	  try f()
-	} catch {
-    throw GenericError(message: "\(error)") // error: GenericError is not an E
-  }
-}
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
 ```
 
-However, this seems unlikely to cause problems in practice, and the only real way to avoid it would be to prohibit the use of `rethrows` (with no specified thrown type) when any of the closure parameters use typed throws.
+which states that `map` will only throw errors of the same type as `transform` does. As a special case, when `rethrows` is not provided with a typed error, we propose to treat any untyped `throws` on a closure parameter as if it were written `throws(Ei)`, where `Ei` is a synthesized generic parameter for that closure parameter `i` that is required to conform to the `Error` protocol. This way, the simplest form of `rethrows` will maintain precise type information. If the body of the function tries to throw anything else (i.e., by doing error translation), it will produce an error.
+
+> **Swift 6**: This rule is convenient, but will break existing code that uses `rethrows` and performs any kind of error translation. Therefore, we delay this specific change in the semantics of untyped `rethrows` with untyped `throws` closure parameters until Swift 6.
 
 ### Subtyping rules
 
@@ -703,7 +732,17 @@ With typed throws, the closure type could be inferred to have a typed error by c
 > }
 > ```
 >
-> will currently be inferred as `throws`. With the rule specified here, it will be inferred as `throws(CatError)`. This could break some code that depends on the precisely inferred type. Therefore, this closure inference rule will be delayed until Swift 6.
+> will currently be inferred as `throws`. With the rule specified here, it will be inferred as `throws(CatError)`. This could break some code that depends on the precisely inferred type. To prevent this from becoming a source compatibility problem, we apply a rule similar to the one for `do...catch` statements to limit inference: this new closure inference rule only applies in Swift 5 code when there is at least one `try` within the closure body. This way, one can only infer a more specific thrown error type in a closure when one of the called functions has specified a thrown error type.
+>
+> Note that one can explicitly specify the thrown error type of a closure to disable this type inference, which has the nice effect of also providing a contextual type for throw statements:
+>
+> ```swift
+> { () throws(CatError) in
+>   if Int.random(in: 0..<24) < 20 {
+>     throw .asleep
+>   }
+> }
+> ```
 
 #### Associated type inference
 
