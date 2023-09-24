@@ -589,6 +589,28 @@ which states that `map` will only throw errors of the same type as `transform` d
 
 > **Swift 6**: This rule is convenient, but will break existing code that uses `rethrows` and performs any kind of error translation. Therefore, we delay this specific change in the semantics of untyped `rethrows` with untyped `throws` closure parameters until Swift 6.
 
+#### Opaque thrown error types
+
+The thrown error type of a function can be specified with an [opaque result type](https://github.com/apple/swift-evolution/blob/main/proposals/0244-opaque-result-types.md). For example:
+
+```swift
+func doSomething() throws(some Error) { ... }
+```
+
+The opaque thrown error type is like a result type, so the concrete type of the error is chosen by the `doSomething` function itself, and could change from one version to the next. The caller only knows that the error type conforms to the `Error` protocol; the concrete type won't be knowable until runtime.
+
+Due to the contravariance of parameters, an opaque thrown error type that occurs within a function parameter will be an [opaque parameter](https://github.com/apple/swift-evolution/blob/main/proposals/0341-opaque-parameters.md). This means that the closure argument itself will choose the type, so
+
+```swift
+func map<T>(_ transform: (Element) throws(some Error) -> T) rethrows -> [T]
+```
+
+is equivalent to
+
+```swift
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
+```
+
 ### Subtyping rules
 
 A function type that throws an error of type `A` is a subtype of a function type that differs only in that it throws an error of type `B` when `A` is a subtype of `B`.  As previously noted, a `throws` function that does not specify the thrown error type will have a thrown type of `any Error`, and a non-throwing function has a thrown error type of `Never`. For subtyping purposes, `Never` is assumed to be a subtype of all error types.
