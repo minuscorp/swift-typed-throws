@@ -697,56 +697,133 @@ func f<E>(e: E) throws(E) { ... }
 
 the function `f` has an inferred requirement `E: Error`. 
 
-### Converting between `throws` and `Result`
+### Standard library adjustments
 
-Having a typed `throws` it would be quite convenient to not being forced to explicitly convert between `throws` and `Result`. Semantically `throws` could be just another syntax for `Result`, which would make both of them more composable.
+There are a number of places in the standard library where the adoption of typed throws will help maintain thrown types through user code. This section details those changes to the standard library:
 
-```swift
-func getCatOrThrow() throws(CatError) -> Cat
-func getCatResult() -> Result<Cat, CatError>
-```
+#### Converting between `throws` and `Result`
 
-So it would be nice if we could
+`Result`'s [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) operation translates a throwing closure into a `Result` instance. It's currently defined only when the `Failure` type is `any Error`, i.e.,
 
 ```swift
-do {
-    let cat1: Cat = try getCatOrThrow() // works as always
-    let cat2: Cat = try getCatResult() // `try` will unwrap the `Result` by calling `Result.get()`
-    let catResult1: Result<Cat, CatError> = getCatResult()
-    let catResult2: Result<Cat, CatError> = getCatOrThrow() `throws` is interpreted as the corresponding `Result`
-    let cat3: Cat = getCatOrThrow().get() // same as `try getCatOrThrow()`
-} catch let error as CatError {
-    ...
-}
+init(catching body: () throws -> Success) where Failure == any Error { ... }
 ```
 
-But from what we know, this was already discussed before and was rejected in favour of a performant `throws` implementation.
-
-But at least we recommend updating `Result`'s [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) from
-
-```swift
-init(catching body: () throws -> Success)
-```
-
-to
+Replace this with an initializer that uses typed throws:
 
 ```swift
 init(catching body: () throws(Failure) -> Success)
 ```
 
-and `Result`'s [get()](https://developer.apple.com/documentation/swift/result/3139397-get) from
+The new initializer is more flexible: in addition to retaining the error type from typed throws, it also supports non-throwing closure arguments by inferring `Failure` to be equal to `Never`.
+
+Additionally, `Result`'s `get()` operation:
 
 ```swift
 func get() throws -> Success
 ```
 
-to
+should use `Failure` as the thrown error type:
 
 ```swift
 func get() throws(Failure) -> Success
 ```
 
-Also update `Task` in this manner, and figure out `rethrows` impact on the standard library.
+#### `Task` creation and completion
+
+The [`Task`](https://developer.apple.com/documentation/swift/task) APIs have a `Failure` type similarly to `Result`, but use a pattern of overloading on `Failure == any Error` and `Failure == Never` to handling throwing and non-throwing versions. For example, the `Task` initializer is defined as the following overloaded pair:
+
+```swift
+init(priority: TaskPriority?, operation: () async -> Success) where Failure == Never
+init(priority: TaskPriority?, operation: () async throws -> Success) where Failure == any Error
+```
+
+These two initializers can be replaced with a single initializer using typed throws:
+
+```swift
+init(priority: TaskPriority?, operation: () async throws(Failure) -> Success)
+```
+
+The result is both more expressive (maintaining typed error information) and simpler (because a single initializer suffices). The same transformation can be applied to the `detached` function that creates detached threads, where the two overloads are replaced with the following:
+
+```swift
+@discardableResult
+static func detached(
+    priority: TaskPriority? = nil,
+    operation: @escaping () async throws(Failure) -> Success
+) -> Task<Success, Failure>
+```
+
+Finally, the `value` property of `Task` is similarly overloaded:
+
+```swift
+extension Task where Failure == Never {}
+  var value: Success { get async }
+}
+extension Task where Failure == any Error {
+  var value: Success { get async throws }
+}
+```
+
+These two can be replaced with a single property:
+
+```swift
+var value: Success { get async throws(Failure) }
+```
+
+#### `AsyncIteratorProtocol` associated type
+
+`AsyncSequence` iterators can throw during iteration, as described by the `throws` on the `next()` operation on async iterators:
+
+```swift
+public protocol AsyncIteratorProtocol {
+  associatedtype Element
+  mutating func next() async throws -> Element?
+}
+```
+
+Introduce a new associated type `Failure` into this protocol to use as the thrown error type of `next()`, i.e.,
+
+```swift
+public protocol AsyncIteratorProtocol {
+  associatedtype Element
+  associatedtype Failure: Error = any Error
+  mutating func next() async throws(Failure) -> Element?
+}
+```
+
+Then introduce an associated type `Failure` into `AsyncSequence` that provides a more convenient name for this type, i.e.,
+
+```swift
+protocol AsyncSequence {
+  associatedtype AsyncIterator: AsyncIteratorProtocol 
+      where AsyncIterator.Element == Element, AsyncIterator.Failure == Failure
+  associatedtype Element
+  associatedtype Failure
+
+  __consuming func makeAsyncIterator() -> AsyncIterator
+}
+```
+
+With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
+
+### Operations that `rethrow`
+
+The standard library contains a large number of operations that `rethrow`. In all cases, the standard library will only throw from a call to one of the closure arguments: it will never substitute a different thrown error type. Therefore, update every `rethrows` function in the standard library to carry the thrown error type from the closure parameter to the result, i.e., the optional `map` operation will be change from:
+
+```swift 
+public func map<U>(
+  _ transform: (Wrapped) throws -> U
+) rethrows -> U?
+```
+
+to
+
+```swift
+public func map<U, E>(
+  _ transform: (Wrapped) throws(E) -> U
+) rethrows(E) -> U?
+```
 
 ### Library Evolution
 
@@ -957,6 +1034,10 @@ function-signature ::= params-type params-type async? throws-clause?
 ```
 
 `#openquestion` Any insights are appreciated.
+
+
+
+Note: the change to `AsyncIteratorProtocol` breaks ABI unless we do something tricky. Hmm....
 
 ## Effect on API resilience
 
