@@ -1002,6 +1002,12 @@ enum DataLoaderError {
 
 - If you provide an extension point to your API like a protocol (e.g. a `DataLoader` like above) that can be used to customize the behaviour of your API, then try to omit forcing specific errors on the API user. Most of the time you as an extension point provider just want to know that something went wrong. If you need multiple cases of errors then keep the amount as small as possible and eventually do compatibility converting on the API developer side outside of the extension point implementation. "Only ask for what you need" applies here.
 
+## Future directions
+
+### Specific thrown error types for distributed actors
+
+The transport mechanism for [distributed actors](https://github.com/apple/swift-evolution/blob/main/proposals/0344-distributed-actor-runtime.md), `DistributedActorSystem`, can throw an error due to transport failures. This error is currently untyped, but it should be possible to adopt typed throws (with a `Failure` associated type in `DistributedActorSystem` and mirrored in `DistributedActor`) so that the distributed actor system can be more specific about the kind of error it throws. Calls to a distributed actor from outside the actor (i.e., that could be on a different node) would then throw `errorUnion(Failure, E)` where the `E` is the type that the function normally throws.
+
 ## Alternatives considered
 
 ### Multiple thrown error types
