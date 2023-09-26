@@ -1212,6 +1212,7 @@ The runtime computation of "uninhabited" therefore carries significant cost in t
 ## Revision history
 
 * Revision 2:
+  * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
   * Make it clear that only unconditional catches make `do...catch` exhaustive
   * Update continuation APIs with typed throws
