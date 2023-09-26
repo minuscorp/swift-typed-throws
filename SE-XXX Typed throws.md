@@ -44,6 +44,7 @@
   + [Standard library adoption](#standard-library-adoption)
     - [Converting between `throws` and `Result`](#converting-between--throws--and--result-)
     - [`Task` creation and completion](#-task--creation-and-completion)
+    - [Continuations](#continuations)
     - [`AsyncIteratorProtocol` associated type](#-asynciteratorprotocol--associated-type)
     - [Operations that `rethrow`](#operations-that--rethrow-)
 * [Source compatibility](#source-compatibility)
@@ -961,6 +962,21 @@ These two can be replaced with a single property:
 
 ```swift
 var value: Success { get async throws(Failure) }
+```
+
+#### Continuations
+
+The `with(Checked|Unsafe)ThrowingContinuation` operations should incorporate typed throws, e.g.,:
+
+```swift
+public func withCheckedThrowingContinuation<T, Failure: Error>(
+    function: String = #function,
+    _ body: (CheckedContinuation<T, Failure>) -> Void
+) async throws(Failure) -> T
+
+public func withUnsafeThrowingContinuation<T, Failure: Error>(
+  _ fn: (UnsafeContinuation<T, Failure>) -> Void
+) async throws(Failure) -> T
 ```
 
 #### `AsyncIteratorProtocol` associated type
