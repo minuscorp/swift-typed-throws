@@ -546,6 +546,20 @@ do {
 
 > **Swift 6**: To prevent this source compatibility issue, we can refine the rule slightly for Swift 5 code bases to specify that the caught error type must be `any Error` if there are no `try` expressions in the `do` statement. That way, one can only get a caught error type more specific than `any Error` by calling a function that is already making use of typed throws.
 
+Note that the only way to write an exhaustive `do...catch` statement is to have an unconditional `catch` block. The dynamic checking provided 
+
+```swift
+func f() {
+  do {
+    try callCat()
+  } catch let ce as CatError {
+    
+  } // error: do...catch is not exhaustive, so this code rethrows CatError and is ill-formed
+}
+```
+
+>  **Note**: Exhaustiveness checking in the general is expensive at compile time, and the existing language uses the presence of an unconditional `catch` block as the indicator for an exhaustive `do...catch`. See the section on closure thrown type inference for more details about inferring throwing closures.
+
 #### Typed `rethrows`
 
 A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
