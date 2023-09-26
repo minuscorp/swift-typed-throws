@@ -20,6 +20,7 @@
   + [Concrete error types in catch blocks](#concrete-error-types-in-catch-blocks)
   + [Throwing `any Error` or `Never`](#throwing--any-error--or--never-)
   + [Interconverting between throwing functions and `Result`](#interconverting-between-throwing-functions-and--result-)
+  + [When to use typed throws](#when-to-use-typed-throws)
 * [Detailed design](#detailed-design)
   + [Syntax adjustments](#syntax-adjustments)
     - [Function type](#function-type)
@@ -333,6 +334,22 @@ extension Result {
 ```
 
 Now, the expression `Result(catching: callCat)` will produce an instance of type `Result<Cat, CatError>`, relying on type inference to propagate the thrown error type from `callCat` to the `Failure` type. The aforementioned relationship between thrown types specified as `any Error` and `Never` makes this new formulation subsume existing use cases.
+
+### When to use typed throws
+
+Typed throws makes it possible to strictly specify the thrown error type of a function, but doing so constrains the evolution of that function's implementation. For example, consider an operation and loads bytes from a specified file:
+
+```swift
+func loadBytes(from fileName: String) async throws(FileSystemError) -> [UInt8]
+```
+
+Internally, it is using some file system library that throws a `FileSystemError`, which it then republishes directly. However, the fact that the error was specified to always be a `FileSystemError` will hamper further evolution of this API: for example, it might be reasonable for this API to start supporting loading bytes from other sources (say, a network connection or database) when the file name matches some other schema. However, errors from those other libraries will not be `FileSystemError` instances, which poses a problem for `loadBytes(from:)`: it either needs to translate the errors from other libraries into `FileSystemError` (if that's even possible), or it needs to break its API contract by adopting a more general error type (or untyped `throws`).
+
+The `loadBytes(from:)` function is not a good candidate for typed throws. Indeed, even with the addition of typed throws to Swift, untyped `throws` is the better default for most Swift code, which is passing through errors for presentation rather than trying to exhaustively handle them. Typed throws is potentially applicable in the following circumstances:
+
+1. In dependency-free code that will only ever produce errors itself.
+2. In code that stays within a module or package where you always want to handle the error, so it's a purely an implementation detail.
+3. In generic code that never produces its own errors, but only passes through errors that come from user components. The standard library contains a number of constructs like this, whether they are `rethrows` functions or are capturing a `Failure` type like in `Task` or `Result`.
 
 ## Detailed design
 
@@ -1012,42 +1029,57 @@ The ABI between an function with an untyped throws and one that uses typed throw
 
 ## Effect on API resilience
 
-Assuming a current API
+An API that uses typed throws cannot make its thrown error type more general (or untyped) without breaking existing clients that depend on the specific thrown error type:
 
 ```swift
-struct DataLoaderError {}
+// Library
+public enum DataLoaderError {
+  case missing
+}
 
-protocol DataLoader {
-    func load throws(DataLoaderError) -> Data
+public class DataLoader {
+  func load() throws(DataLoaderError) -> Data { ... }
+}
+
+// Client code
+func processError(_ error: DataLoaderError) { ... }
+
+func load(from dataLoader: dataLoader) {
+  do {
+    try dataLoader.load()
+  } catch {
+  	processError(error)
+  }
 }
 ```
 
-Here are some things to consider when developing an API with typed errors:
+Any attempt to generalize the thrown type of `DataLoader.load()` will break the client code, which depends on getting a `DataLoaderError` in the `catch` block.
 
-- If you need to throw a new specific error, because you think your API user needs to know, that this specific error (e.g. `FileSystemError`) did happen, then it's a breaking change, because your API user may want to react to it in another way now.
-
-Changing 
+Going in the other direction, of making the thrown error type *more* specific than it used to be (or adopting typed throws in an API that previously used untyped throws) can also break clients, but in much more limited cases. For example, let's consider the same API above, but in reverse:
 
 ```swift
-struct DataLoaderError {
-    let message: String
+// Library
+public enum DataLoaderError {
+  case missing
+}
+
+public class DataLoader {
+  func load() throws -> Data { ... }
+}
+
+// Client 
+func processError(_ error: any Error) { ... }
+
+func load(from dataLoader: dataLoader) {
+  do {
+    try dataLoader.load()
+  } catch {
+  	processError(error)
+  }
 }
 ```
 
-to
-
-```swift
-enum DataLoaderError {
-    case loadError(LoadError)
-    case fileSystemError(FileSystemError)
-}
-```
-
-- If you don't need to throw it, because you think your API user does not need to know this error, then you map it to the error that represents the `FileSystemError` (most of the time in a more abstract sense). In this example you would throw a `DataLoaderError` with another message.
-
-- If you think you don't know what will happen in the future and breaking changes should be avoided as much as possible, then just throw `any Error`. But keep in mind that you are less explicit about what can happen and also take the possibility for the API user to rely on the existence of the error (by using the compiler) leading to issues mentioned in [Motivation](#motivation).
-
-- If you provide an extension point to your API like a protocol (e.g. a `DataLoader` like above) that can be used to customize the behaviour of your API, then try to omit forcing specific errors on the API user. Most of the time you as an extension point provider just want to know that something went wrong. If you need multiple cases of errors then keep the amount as small as possible and eventually do compatibility converting on the API developer side outside of the extension point implementation. "Only ask for what you need" applies here.
+Here, the `DataLoader.load()` function could be updated to throw `DataLoaderError` and this particular client code would still work, because `DataLoaderError` is convertible to `any Error`. Note that clients could still be broken by this kind of change, for example overrides of an `open` function, declarations that satisfy a protocol requirement, or code that relies on the precide error type (say, by overloading). However, such a change is far less likely to break clients of an API than loosening thrown type informance.
 
 ## Future directions
 
