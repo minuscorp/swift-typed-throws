@@ -17,7 +17,7 @@
   + [Existential error types incur overhead](#existential-error-types-incur-overhead)
   + [Patterns of Swift libraries](#patterns-of-swift-libraries)
 * [Proposed solution](#proposed-solution)
-  + [Concrete error types in catch blocks](#concrete-error-types-in-catch-blocks)
+  + [Specific error types in catch blocks](#specific-error-types-in-catch-blocks)
   + [Throwing `any Error` or `Never`](#throwing--any-error--or--never-)
   + [Interconverting between throwing functions and `Result`](#interconverting-between-throwing-functions-and--result-)
   + [When to use typed throws](#when-to-use-typed-throws)
@@ -248,7 +248,7 @@ func userResultFromStrings(strings: [String]) throws(GenericError) -> User  {
 
 The error handling mechanism is pushed aside and you can see the domain logic more clearly. 
 
-### Concrete error types in catch blocks
+### Specific types in catch blocks
 
 With typed throws, a throwing function contains the same information about the error type as `Result`, making it easier to convert between the two:
 
@@ -295,6 +295,12 @@ func userResultFromStrings(strings: [String]) throws(GenericError) -> User  {
         throw GenericError(message: "First name is missing")
     }
 }
+```
+
+The thrown error type does not need to be a concrete type; it could also be an existential type that might carry more information that `any Error`. For example, we could always throw errors that can be encoded and decoded:
+
+```swift
+func remoteCall(function: String) async throws(any Error & Codable) -> String { ... }
 ```
 
 ### Throwing `any Error` or `Never`
