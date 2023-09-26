@@ -33,6 +33,7 @@
     - [Typed `rethrows`](#typed--rethrows-)
     - [Opaque thrown error types](#opaque-thrown-error-types)
     - [Throwing in asynchronous `for..in` loops](#throwing-in-asynchronous--forin--loops)
+    - [`async let`](#-async-let-)
   + [Subtyping rules](#subtyping-rules)
     - [Function conversions](#function-conversions)
     - [Protocol conformance and refinements](#protocol-conformance-and-refinements)
@@ -704,6 +705,18 @@ The asynchronous `for..in` loop uses an underspecified notion of ["rethrowing" p
 
 When a `for..in` loop iterators over an `AsyncSequence`, the iteration can throw the `Failure` type of the `AsyncSequence`. When the `Failure` type is `Never`, the loop cannot throw and does not require `try`. This provides a mechanism for handling throwing and non-throwing asynchronous `for..in` loops consistently.
 
+#### `async let`
+
+An `async let` initializer can throw an error, and that error is effectively rethrown at any point where one of the variables defined in the `async let` is referenced. For example:
+
+```swift
+async let answer = callCat()
+// ... 
+try await answer // could rethrow the result from the initializer here
+```
+
+The type thrown by the variables of an `async let` is determined using the same rules as for the `do` part of a `do...catch` block. In the example above, accesses to `answer` can throw an error of type `CatError`.
+
 ### Subtyping rules
 
 A function type that throws an error of type `A` is a subtype of a function type that differs only in that it throws an error of type `B` when `A` is a subtype of `B`.  As previously noted, a `throws` function that does not specify the thrown error type will have a thrown type of `any Error`, and a non-throwing function has a thrown error type of `Never`. For subtyping purposes, `Never` is assumed to be a subtype of all error types.
@@ -1217,3 +1230,4 @@ The runtime computation of "uninhabited" therefore carries significant cost in t
   * Make it clear that only unconditional catches make `do...catch` exhaustive
   * Update continuation APIs with typed throws
   * Add an example of an existential thrown error type
+  * Describe semantics of `async let` with respect to thrown errors
