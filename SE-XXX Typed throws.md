@@ -521,7 +521,7 @@ do {
   }
 } catch .asleep {
   openFoodCan()
-} // note: CatError can be thrown out of this do...catch block when the cat isn't asleep**Rationale**: 
+} // note: CatError can be thrown out of this do...catch block when the cat isn't asleep
 ```
 
 > **Rationale**: By inferring a concrete result type for the thrown error type, we can entirely avoid having to reason about existential error types within `catch` blocks, leading to a simpler syntax. Additionally, it preserves the notion that a `do...catch` block that has a `catch` site accepting anything (i.e., one with no conditions) can exhaustively suppress all errors. 
