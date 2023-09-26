@@ -56,6 +56,7 @@
   + [Thrown error type syntax](#thrown-error-type-syntax)
   + [Multiple thrown error types](#multiple-thrown-error-types)
   + [Treat all uninhabited thrown error types as nonthrowing](#treat-all-uninhabited-thrown-error-types-as-nonthrowing)
+* [Revision history](#revision-history)
 
 ## Introduction
 
@@ -1207,3 +1208,11 @@ f(Pair<Never, Int>.self)     // Fn should be equivalent to () -> Void
 ```
 
 The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. Therefore, we stick with the much simpler rule where `Never` is the only uninhabited type considered to be special.
+
+## Revision history
+
+* Revision 2:
+  * Add an Alternatives Considered section for other syntaxes
+  * Make it clear that only unconditional catches make `do...catch` exhaustive
+  * Update continuation APIs with typed throws
+  * Add an example of an existential thrown error type
