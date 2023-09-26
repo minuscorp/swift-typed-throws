@@ -52,6 +52,7 @@
 * [Future directions](#future-directions)
   + [Specific thrown error types for distributed actors](#specific-thrown-error-types-for-distributed-actors)
 * [Alternatives considered](#alternatives-considered)
+  + [Thrown error type syntax](#thrown-error-type-syntax)
   + [Multiple thrown error types](#multiple-thrown-error-types)
   + [Treat all uninhabited thrown error types as nonthrowing](#treat-all-uninhabited-thrown-error-types-as-nonthrowing)
 
@@ -1088,6 +1089,36 @@ Here, the `DataLoader.load()` function could be updated to throw `DataLoaderErro
 The transport mechanism for [distributed actors](https://github.com/apple/swift-evolution/blob/main/proposals/0344-distributed-actor-runtime.md), `DistributedActorSystem`, can throw an error due to transport failures. This error is currently untyped, but it should be possible to adopt typed throws (with a `Failure` associated type in `DistributedActorSystem` and mirrored in `DistributedActor`) so that the distributed actor system can be more specific about the kind of error it throws. Calls to a distributed actor from outside the actor (i.e., that could be on a different node) would then throw `errorUnion(Failure, E)` where the `E` is the type that the function normally throws.
 
 ## Alternatives considered
+
+### Thrown error type syntax
+
+There have been several alternatives to the `throws(E)` syntax proposed here. The `throws(E)` syntax was chosen because it is syntactically unambiguous, allows arbitrary types for `E` such as `any Error & Codable`,  and is consistent with the way in which attributes (like property wrappers or macros with arguments) and modifiers (like `unowned(unsafe)`) are written.
+
+The most commonly proposed syntax omits the parentheses, i.e., `throws E`. However, this syntax introduces some syntactic ambiguities that would need to be addressed and might cause problems for future evolution of the language:
+
+* The following code is syntactically ambiguous if `E` is parsed with the arbitrary `type` grammar:
+
+  ```swift
+  func f() throws (E) -> Int { ... }
+  ```
+
+  because the error type would parse as either `(E)` or `(E) -> Int`. One could parse a subset of the `type` grammar that doesn't include function types to dodge this ambiguity, with a more complicated grammar.
+
+* The identifier following `throws` could end up conflicting with a future effect:
+
+  ```swift
+  func f() throws E { ... }
+  ```
+
+  If `E` were an effect name in some later Swift version, then there is an ambiguity between typed throws and that effect that we would need to resolve. Future effect modifiers might require more than one argument (and therefore need parentheses), which would make them inconsistent with `throws E`.
+
+Another suggestion uses angle brackets around the thrown type, i.e.,
+
+```swift
+func f() throws<E> -> Int { ... }
+```
+
+This follows more closely with generic syntax, and highlights the type nature of the arguments more clearly. It's inconsistent with the use of parentheses in modifiers, but has some precedent in attached macros where one can explicitly specify the generic arguments to the macro, e.g., `@OptionSet<UInt16>`. 
 
 ### Multiple thrown error types
 
