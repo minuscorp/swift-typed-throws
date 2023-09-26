@@ -46,6 +46,7 @@
     - [Converting between `throws` and `Result`](#converting-between--throws--and--result-)
     - [`Task` creation and completion](#-task--creation-and-completion)
     - [Continuations](#continuations)
+    - [Task cancellation](#task-cancellation)
     - [`AsyncIteratorProtocol` associated type](#-asynciteratorprotocol--associated-type)
     - [Operations that `rethrow`](#operations-that--rethrow-)
 * [Source compatibility](#source-compatibility)
@@ -999,6 +1000,31 @@ public func withUnsafeThrowingContinuation<T, Failure: Error>(
 ) async throws(Failure) -> T
 ```
 
+#### Task cancellation
+
+A few of the `Task` APIs are documented to only throw `CancellationError` and can adopt typed throws. For example, `checkCancellation`:
+
+```swift
+public static func checkCancellation() throws(CancellationError)
+```
+
+Similarly, the `sleep` APIs will only throw on cancellation:
+
+```swift
+public static func sleep<C: Clock>(
+  until deadline: C.Instant,
+  tolerance: C.Instant.Duration? = nil,
+  clock: C = ContinuousClock()
+) async throws(CancellationError)
+
+public static func sleep<C: Clock>(
+  for duration: C.Instant.Duration,
+  tolerance: C.Instant.Duration? = nil,
+  clock: C = ContinuousClock()
+) async throws(CancellationError)
+
+```
+
 #### `AsyncIteratorProtocol` associated type
 
 `AsyncSequence` iterators can throw during iteration, as described by the `throws` on the `next()` operation on async iterators:
@@ -1231,3 +1257,4 @@ The runtime computation of "uninhabited" therefore carries significant cost in t
   * Update continuation APIs with typed throws
   * Add an example of an existential thrown error type
   * Describe semantics of `async let` with respect to thrown errors
+  * Add updates to task cancellation APIs
