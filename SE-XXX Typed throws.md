@@ -417,18 +417,6 @@ func countNodes<E: Error>(in tree: Node, matching predicate: (Node) throws(E) ->
 
 Note that typed throws has elegantly solved our problem, because any throwing site that throws a value of type `E` is accepted. When the closure argument doesn't throw, `E` is inferred to `Never`, and (dynamically) no instance of it will ever be created.
 
-### Interconverting between throwing functions and `Result`
-
-Swift's `Result` type has an [`init(catching:)`](https://github.com/apple/swift-evolution/blob/main/proposals/0235-add-result.md#detailed-design) operation that produces a result when calling a throwing closure, but that result always has the existential type `any Error` as its failure type. With this proposal, we can generalize that operation to produce a more specific result:
-
-```swift
-extension Result {
-  init(catching body: throws(Failure) -> Success) { ... }
-}
-```
-
-Now, the expression `Result(catching: callCat)` will produce an instance of type `Result<Cat, CatError>`, relying on type inference to propagate the thrown error type from `callCat` to the `Failure` type. The aforementioned relationship between thrown types specified as `any Error` and `Never` makes this new formulation subsume existing use cases.
-
 ### When to use typed throws
 
 Typed throws makes it possible to strictly specify the thrown error type of a function, but doing so constrains the evolution of that function's implementation. For example, consider an operation and loads bytes from a specified file:
