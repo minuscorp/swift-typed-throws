@@ -725,6 +725,24 @@ func doSomething() throws(some Error) { ... }
 
 The opaque thrown error type is like a result type, so the concrete type of the error is chosen by the `doSomething` function itself, and could change from one version to the next. The caller only knows that the error type conforms to the `Error` protocol; the concrete type won't be knowable until runtime.
 
+Opaque result types can be used as an alternative to existentials (`any Error`) when there is a fixed number of potential error types that might be thrown , and we either can't (due to being in an embedded environment) or don't want to (for performance or code-evolution reasons) expose the precise error type. For example, one could use a suitable `Either` type under the hood:
+
+```swift
+func doSomething() throws(some Error) { 
+  do {
+    try callCat()
+  } catch {
+    throw Either<CatError, KidError>.left(error)
+  }
+  
+  do {
+    try callKids()
+  } catch {
+    throw Either<CatError, KidError>.right(error)
+  }
+}
+```
+
 Due to the contravariance of parameters, an opaque thrown error type that occurs within a function parameter will be an [opaque parameter](https://github.com/apple/swift-evolution/blob/main/proposals/0341-opaque-parameters.md). This means that the closure argument itself will choose the type, so
 
 ```swift
@@ -1258,6 +1276,7 @@ Removing or changing the semantics of `rethrows` would be a source-incompatible 
   * Move the replacement of `rethrows` in the standard library with typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
   * Move the concurrency library changes for typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
   * Add an extended example of replacing the need for `rethrows(unsafe)` with typed throws.
+  * Provide a more significant example of opaque thrown errors that makes use of `Either` internally.
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
