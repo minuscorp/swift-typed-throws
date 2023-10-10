@@ -15,7 +15,6 @@
     - [Approach 1: Chaining Results](#approach-1--chaining-results)
     - [Approach 2: Unwrap/switch/wrap on every chaining/mapping point](#approach-2--unwrap-switch-wrap-on-every-chaining-mapping-point)
   + [Existential error types incur overhead](#existential-error-types-incur-overhead)
-  + [Patterns of Swift libraries](#patterns-of-swift-libraries)
 * [Proposed solution](#proposed-solution)
   + [Specific error types in catch blocks](#specific-error-types-in-catch-blocks)
   + [Throwing `any Error` or `Never`](#throwing--any-error--or--never-)
@@ -199,14 +198,6 @@ This is even more awful then the first approach, because now we are writing the 
 ### Existential error types incur overhead
 
 Untyped errors have the existential type `any Error`, which incurs some [necessary overhead](https://github.com/apple/swift-evolution/blob/main/proposals/0335-existential-any.md), in code size, heap allocation overhead, and execution performance, due to the need to support values of unknown type. In constrained environments such as those supported by [Embedded Swift](https://forums.swift.org/t/embedded-swift/67057), existential types may not be permitted due to these overheads, making the existing untyped throws mechanism unusable in those environments.
-
-### Patterns of Swift libraries
-
-There are specific error types in typical Swift libraries like [DecodingError](https://developer.apple.com/documentation/swift/decodingerror), [CryptoKitError](https://developer.apple.com/documentation/cryptokit/cryptokiterror) or [ArchiveError](https://developer.apple.com/documentation/applearchive/archiveerror). But it's not visible without documentation, where these errors can emerge.
-
-On the other hand error type erasure has it's place. If an extension point for an API should be provided, it is often to restrictive to expect specific errors to be thrown. `Decodable`s [init(from:)](https://developer.apple.com/documentation/swift/decodable/2894081-init) may be too restrictive with an explicit error type provided by the API.
-
-Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/blob/master/docs/ErrorHandlingRationale.rst) there is valid usage for optionals and throws and we propose even for a typed throws. It comes down to how explicit an API should be and this can vary substantially based on requirements.
 
 
 ## Proposed solution
