@@ -859,13 +859,13 @@ struct Ragdoll: CatFeeder {
 
 #### `Error` requirement inference
 
-When a function signature uses a generic parameter or associated type as a thrown type, that generic parameter or associated type is implicitly inferred to conform to the `Error` type. For example, given this declaration:
+When a function signature uses a generic parameter or associated type as a thrown type, that generic parameter or associated type is implicitly inferred to conform to the `Error` type. For example, given this declaration for `map`:
 
 ```swift
-func f<E>(e: E) throws(E) { ... }
+func map<T, E>(body: (Element) throws(E) -> T) throws(E) { ... }
 ```
 
-the function `f` has an inferred requirement `E: Error`. 
+the function has an inferred requirement `E: Error`. 
 
 ### Standard library adoption
 
@@ -1283,6 +1283,7 @@ Removing or changing the semantics of `rethrows` would be a source-incompatible 
 * Revision 3:
   * Move the the typed `rethrows` feature out of this proposal, and into Alternatives Considered. Once we gain more experience with typed throws, we can decide what to do with `rethrows`.
   * Expand the discussion on allowing all uninhabited error types to mean "non-throwing".
+  * Provide a better example for inferring `Error` conformance on generic parameters.
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
