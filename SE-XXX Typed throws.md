@@ -66,6 +66,7 @@ Swift's error handling model allows functions and closures marked `throws` to no
 
 Swift-evolution threads:
 
+* [[Pitch N+1] Typed throws](https://forums.swift.org/t/pitch-n-1-typed-throws/67496)
 * [Typed throw functions - Evolution / Discussion - Swift Forums](https://forums.swift.org/t/typed-throw-functions/38860)
 * [Status check: typed throws](https://forums.swift.org/t/status-check-typed-throws/66637)
 
@@ -354,9 +355,9 @@ Typed throws makes it possible to strictly specify the thrown error type of a fu
 func loadBytes(from fileName: String) async throws(FileSystemError) -> [UInt8]
 ```
 
-Internally, it is using some file system library that throws a `FileSystemError`, which it then republishes directly. However, the fact that the error was specified to always be a `FileSystemError` will hamper further evolution of this API: for example, it might be reasonable for this API to start supporting loading bytes from other sources (say, a network connection or database) when the file name matches some other schema. However, errors from those other libraries will not be `FileSystemError` instances, which poses a problem for `loadBytes(from:)`: it either needs to translate the errors from other libraries into `FileSystemError` (if that's even possible), or it needs to break its API contract by adopting a more general error type (or untyped `throws`).
+Internally, it is using some file system library that throws a `FileSystemError`, which it then republishes directly. However, the fact that the error was specified to always be a `FileSystemError` may hamper further evolution of this API: for example, it might be reasonable for this API to start supporting loading bytes from other sources (say, a network connection or database) when the file name matches some other schema. However, errors from those other libraries will not be `FileSystemError` instances, which poses a problem for `loadBytes(from:)`: it either needs to translate the errors from other libraries into `FileSystemError` (if that's even possible), or it needs to break its API contract by adopting a more general error type (or untyped `throws`).
 
-The `loadBytes(from:)` function is not a good candidate for typed throws. Indeed, even with the addition of typed throws to Swift, untyped `throws` is the better default for most Swift code, which is passing through errors for presentation rather than trying to exhaustively handle them. Typed throws is potentially applicable in the following circumstances:
+The `loadBytes(from:)` function is probably not a good candidate for typed throws. Indeed, even with the addition of typed throws to Swift, untyped `throws` is the better default for most Swift code, which is passing through errors from lower-level libraries for presentation rather than trying to exhaustively handle them. Typed throws is potentially applicable in the following circumstances:
 
 1. In dependency-free code that will only ever produce errors itself.
 2. In code that stays within a module or package where you always want to handle the error, so it's a purely an implementation detail.
