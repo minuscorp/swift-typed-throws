@@ -321,6 +321,102 @@ func throwsNothing() { }
 
 There is a more general subtyping rule here that says that you can loosen the thrown type, i.e., converting a non-throwing function to a throwing one, or a function that throws a concrete type to one that throws `any Error`. 
 
+### An alternative to `rethrows`
+
+The ability to throw a generic error parameter that might be `Never` allows one to safely express some rethrowing patterns that are otherwise not possible with rethrows. For example, consider a function that semantically rethrows, but needs to do so by going through some code that doesn't throw:
+
+```swift
+/// Count number of nodes in the tree that match a particular predicate
+func countNodes(in tree: Node, matching predicate: (Node) throws -> Bool) rethrows -> Int {
+  class MyNodeVisitor: NodeVisitor {
+    var error: (any Error)? = nil
+    var count: Int = 0
+    var predicate: (Node) throws -> Bool
+
+    init(predicate: @escaping (Node) throws -> Bool) {
+      self.predicate = predicate
+    }
+    
+    override func visit(node: Node) {
+    	do {
+        if try predicate(node) {
+          count = count + 1
+        }
+      } catch let localError {
+        error = error ?? localError
+      } 
+    }
+  }
+  
+  return try withoutActuallyEscaping(predicate) { predicate in
+    let visitor = MyNodeVisitor(predicate: predicate)
+    visitor.visitTree(node)
+    if let error = visitor.error {
+      throw error // error: is not throwing as a consequence of 'predicate' throwing.
+    } else {
+      return visitor.count
+    }
+  }
+}
+```
+
+Walking through the code, we can convince ourselves that `MyNodeVisitor.error` will only ever be set as a result of the predicate throwing an error, so this code semantically fulfills the contract of `rethrows`. However, the Swift compiler's rethrows checking cannot perform such an analysis, so it will reject this function. The limitation on `rethrows` has prompted at least [two](https://forums.swift.org/t/pitch-rethrows-unchecked/10078) [pitches](https://forums.swift.org/t/pitch-fix-rethrows-checking-and-add-rethrows-unsafe/44863) to add an "unsafe" or "unchecked" rethrows variant, turning this into a runtime-checked contract. 
+
+Typed throws offer a compelling alternative: one can capture the error type of the closure argument in a generic parameter, and use that consistently throughout. This is immediately useful for maintaining precise typed error information in generic code that  only rethrows the error from its closure arguments, like `map:
+
+```swift
+extension Collection {
+  func map<U, E: Error>(body: (Element) throws(E) -> U) throws(E) -> [U] {
+    var result: [U] = []
+    for element in self {
+      result.append(try body(element))
+    }
+    return result
+  }
+}
+```
+
+When given a closure that throws `CatError`, this formulation of `map` will throw `CatError`. When given a closure that doesn't throw, `E` will be `Never`, so `map` is non-throwing.
+
+This approach extends to our `countNodes` example:
+
+```swift
+/// Count number of nodes in the tree that match a particular predicate
+func countNodes<E: Error>(in tree: Node, matching predicate: (Node) throws(E) -> Bool) throws(E) -> Int {
+  class MyNodeVisitor<E>: NodeVisitor {
+    var error: E? = nil
+    var count: Int = 0
+    var predicate: (Node) throws(E) -> Bool
+
+    init(predicate: @escaping (Node) throws(E) -> Bool) {
+      self.predicate = predicate
+    }
+    
+    override func visit(node: Node) {
+    	do {
+        if try predicate(node) {
+          count = count + 1
+        }
+      } catch let localError {
+        error = error ?? localError // okay, error has type E?, localError has type E
+      } 
+    }
+  }
+  
+  return try withoutActuallyEscaping(predicate) { predicate in
+    let visitor = MyNodeVisitor(predicate: predicate)
+    visitor.visitTree(node)
+    if let error = visitor.error {
+      throw error // okay! error has type E, which can be thrown out of this function
+    } else {
+      return visitor.count
+    }
+  }
+}
+```
+
+Note that typed throws has elegantly solved our problem, because any throwing site that throws a value of type `E` is accepted. When the closure argument doesn't throw, `E` is inferred to `Never`, and (dynamically) no instance of it will ever be created.
+
 ### Interconverting between throwing functions and `Result`
 
 Swift's `Result` type has an [`init(catching:)`](https://github.com/apple/swift-evolution/blob/main/proposals/0235-add-result.md#detailed-design) operation that produces a result when calling a throwing closure, but that result always has the existential type `any Error` as its failure type. With this proposal, we can generalize that operation to produce a more specific result:
@@ -1161,6 +1257,7 @@ Removing or changing the semantics of `rethrows` would be a source-incompatible 
   * Provide a better example for inferring `Error` conformance on generic parameters.
   * Move the replacement of `rethrows` in the standard library with typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
   * Move the concurrency library changes for typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
+  * Add an extended example of replacing the need for `rethrows(unsafe)` with typed throws.
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
