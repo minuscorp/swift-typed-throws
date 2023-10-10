@@ -5,70 +5,64 @@
 * Review Manager: TBD
 * Status: **Proposed**
 
-## Table of contents
-
-* [Introduction](#introduction)
-* [Motivation](#motivation)
-  + [Communicates less error information than `Result` or `Task`](#communicates-less-error-information-than--result--or--task-)
-  + [Inability to interconvert `throws` with `Result` or `Task`](#inability-to-interconvert--throws--with--result--or--task-)
-  + [`Result` is not the go to replacement for `throws` in imperative languages](#-result--is-not-the-go-to-replacement-for--throws--in-imperative-languages)
-    - [Approach 1: Chaining Results](#approach-1--chaining-results)
-    - [Approach 2: Unwrap/switch/wrap on every chaining/mapping point](#approach-2--unwrap-switch-wrap-on-every-chaining-mapping-point)
-  + [Existential error types incur overhead](#existential-error-types-incur-overhead)
-  + [Patterns of Swift libraries](#patterns-of-swift-libraries)
-* [Proposed solution](#proposed-solution)
-  + [Specific error types in catch blocks](#specific-error-types-in-catch-blocks)
-  + [Throwing `any Error` or `Never`](#throwing--any-error--or--never-)
-  + [Interconverting between throwing functions and `Result`](#interconverting-between-throwing-functions-and--result-)
-  + [When to use typed throws](#when-to-use-typed-throws)
-* [Detailed design](#detailed-design)
-  + [Syntax adjustments](#syntax-adjustments)
-    - [Function type](#function-type)
-    - [Closure expression](#closure-expression)
-    - [Function, initializer, and accessor declarations](#function--initializer--and-accessor-declarations)
-    - [Examples](#examples)
-  + [Throwing and catching with typed throws](#throwing-and-catching-with-typed-throws)
-    - [Throwing within a function that declares a typed error](#throwing-within-a-function-that-declares-a-typed-error)
-    - [Catching typed thrown errors](#catching-typed-thrown-errors)
-    - [Typed `rethrows`](#typed--rethrows-)
-    - [Opaque thrown error types](#opaque-thrown-error-types)
-    - [Throwing in asynchronous `for..in` loops](#throwing-in-asynchronous--forin--loops)
-    - [`async let`](#-async-let-)
-  + [Subtyping rules](#subtyping-rules)
-    - [Function conversions](#function-conversions)
-    - [Protocol conformance and refinements](#protocol-conformance-and-refinements)
-    - [Override checking](#override-checking)
-  + [Type inference](#type-inference)
-    - [Closure thrown type inference](#closure-thrown-type-inference)
-    - [Associated type inference](#associated-type-inference)
-    - [`Error` requirement inference](#-error--requirement-inference)
-  + [Standard library adoption](#standard-library-adoption)
-    - [Converting between `throws` and `Result`](#converting-between--throws--and--result-)
-    - [`Task` creation and completion](#-task--creation-and-completion)
-    - [Continuations](#continuations)
-    - [Task cancellation](#task-cancellation)
-    - [`AsyncIteratorProtocol` associated type](#-asynciteratorprotocol--associated-type)
-    - [Operations that `rethrow`](#operations-that--rethrow-)
-* [Source compatibility](#source-compatibility)
-* [Effect on ABI stability](#effect-on-abi-stability)
-* [Effect on API resilience](#effect-on-api-resilience)
-* [Future directions](#future-directions)
-  + [Specific thrown error types for distributed actors](#specific-thrown-error-types-for-distributed-actors)
-* [Alternatives considered](#alternatives-considered)
-  + [Thrown error type syntax](#thrown-error-type-syntax)
-  + [Multiple thrown error types](#multiple-thrown-error-types)
-  + [Treat all uninhabited thrown error types as nonthrowing](#treat-all-uninhabited-thrown-error-types-as-nonthrowing)
-* [Revision history](#revision-history)
-
 ## Introduction
 
 Swift's error handling model allows functions and closures marked `throws` to note that they can exit by throwing an error. The error values themselve are always type-erased to `any Error`. This approach encourages errors to be handled generically, but makes it impossible to provide more precisely-typed errors without resorting to something like [`Result`](https://developer.apple.com/documentation/swift/result). This proposal introduces the ability to specify that functions and closures only throw errors of a particular concrete type.
 
 Swift-evolution threads:
 
+* [[Pitch N+1] Typed throws](https://forums.swift.org/t/pitch-n-1-typed-throws/67496)
 * [Typed throw functions - Evolution / Discussion - Swift Forums](https://forums.swift.org/t/typed-throw-functions/38860)
 * [Status check: typed throws](https://forums.swift.org/t/status-check-typed-throws/66637)
 
+## Table of Contents
+
+[Typed throws](#typed-throws)
+ * [Introduction](#introduction)
+ * [Motivation](#motivation)
+    * [Communicates less error information than Result or Task](#communicates-less-error-information-than-result-or-task)
+    * [Inability to interconvert throws with Result or Task](#inability-to-interconvert-throws-with-result-or-task)
+       * [Approach 1: Chaining Results](#approach-1-chaining-results)
+       * [Approach 2: Unwrap/switch/wrap on every chaining/mapping point](#approach-2-unwrapswitchwrap-on-every-chainingmapping-point)
+    * [Existential error types incur overhead](#existential-error-types-incur-overhead)
+ * [Proposed solution](#proposed-solution)
+    * [Specific types in catch blocks](#specific-types-in-catch-blocks)
+    * [Throwing any Error or Never](#throwing-any-error-or-never)
+    * [An alternative to rethrows](#an-alternative-to-rethrows)
+    * [When to use typed throws](#when-to-use-typed-throws)
+ * [Detailed design](#detailed-design)
+    * [Syntax adjustments](#syntax-adjustments)
+       * [Function type](#function-type)
+       * [Closure expression](#closure-expression)
+       * [Function, initializer, and accessor declarations](#function-initializer-and-accessor-declarations)
+       * [Examples](#examples)
+    * [Throwing and catching with typed throws](#throwing-and-catching-with-typed-throws)
+       * [Throwing within a function that declares a typed error](#throwing-within-a-function-that-declares-a-typed-error)
+       * [Catching typed thrown errors](#catching-typed-thrown-errors)
+       * [rethrows](#rethrows)
+       * [Opaque thrown error types](#opaque-thrown-error-types)
+       * [async let](#async-let)
+    * [Subtyping rules](#subtyping-rules)
+       * [Function conversions](#function-conversions)
+       * [Protocol conformance and refinements](#protocol-conformance-and-refinements)
+       * [Override checking](#override-checking)
+    * [Type inference](#type-inference)
+       * [Closure thrown type inference](#closure-thrown-type-inference)
+       * [Associated type inference](#associated-type-inference)
+    * [Converting between throws and Result](#converting-between-throws-and-result)
+ * [Source compatibility](#source-compatibility)
+ * [Effect on ABI stability](#effect-on-abi-stability)
+ * [Effect on API resilience](#effect-on-api-resilience)
+ * [Future directions](#future-directions)
+    * [Standard library operations that rethrow](#standard-library-operations-that-rethrow)
+    * [Concurrency library adoption](#concurrency-library-adoption)
+    * [Specific thrown error types for distributed actors](#specific-thrown-error-types-for-distributed-actors)
+ * [Alternatives considered](#alternatives-considered)
+    * [Thrown error type syntax](#thrown-error-type-syntax)
+    * [Multiple thrown error types](#multiple-thrown-error-types)
+    * [Treat all uninhabited thrown error types as nonthrowing](#treat-all-uninhabited-thrown-error-types-as-nonthrowing)
+    * [Typed rethrows](#typed-rethrows)
+ * [Revision history](#revision-history)
 
 ## Motivation
 
@@ -204,14 +198,6 @@ This is even more awful then the first approach, because now we are writing the 
 
 Untyped errors have the existential type `any Error`, which incurs some [necessary overhead](https://github.com/apple/swift-evolution/blob/main/proposals/0335-existential-any.md), in code size, heap allocation overhead, and execution performance, due to the need to support values of unknown type. In constrained environments such as those supported by [Embedded Swift](https://forums.swift.org/t/embedded-swift/67057), existential types may not be permitted due to these overheads, making the existing untyped throws mechanism unusable in those environments.
 
-### Patterns of Swift libraries
-
-There are specific error types in typical Swift libraries like [DecodingError](https://developer.apple.com/documentation/swift/decodingerror), [CryptoKitError](https://developer.apple.com/documentation/cryptokit/cryptokiterror) or [ArchiveError](https://developer.apple.com/documentation/applearchive/archiveerror). But it's not visible without documentation, where these errors can emerge.
-
-On the other hand error type erasure has it's place. If an extension point for an API should be provided, it is often to restrictive to expect specific errors to be thrown. `Decodable`s [init(from:)](https://developer.apple.com/documentation/swift/decodable/2894081-init) may be too restrictive with an explicit error type provided by the API.
-
-Like it's layed out in [ErrorHandlingRationale](https://github.com/apple/swift/blob/master/docs/ErrorHandlingRationale.rst) there is valid usage for optionals and throws and we propose even for a typed throws. It comes down to how explicit an API should be and this can vary substantially based on requirements.
-
 
 ## Proposed solution
 
@@ -334,17 +320,101 @@ func throwsNothing() { }
 
 There is a more general subtyping rule here that says that you can loosen the thrown type, i.e., converting a non-throwing function to a throwing one, or a function that throws a concrete type to one that throws `any Error`. 
 
-### Interconverting between throwing functions and `Result`
+### An alternative to `rethrows`
 
-Swift's `Result` type has an [`init(catching:)`](https://github.com/apple/swift-evolution/blob/main/proposals/0235-add-result.md#detailed-design) operation that produces a result when calling a throwing closure, but that result always has the existential type `any Error` as its failure type. With this proposal, we can generalize that operation to produce a more specific result:
+The ability to throw a generic error parameter that might be `Never` allows one to safely express some rethrowing patterns that are otherwise not possible with rethrows. For example, consider a function that semantically rethrows, but needs to do so by going through some code that doesn't throw:
 
 ```swift
-extension Result {
-  init(catching body: throws(Failure) -> Success) { ... }
+/// Count number of nodes in the tree that match a particular predicate
+func countNodes(in tree: Node, matching predicate: (Node) throws -> Bool) rethrows -> Int {
+  class MyNodeVisitor: NodeVisitor {
+    var error: (any Error)? = nil
+    var count: Int = 0
+    var predicate: (Node) throws -> Bool
+
+    init(predicate: @escaping (Node) throws -> Bool) {
+      self.predicate = predicate
+    }
+    
+    override func visit(node: Node) {
+    	do {
+        if try predicate(node) {
+          count = count + 1
+        }
+      } catch let localError {
+        error = error ?? localError
+      } 
+    }
+  }
+  
+  return try withoutActuallyEscaping(predicate) { predicate in
+    let visitor = MyNodeVisitor(predicate: predicate)
+    visitor.visitTree(node)
+    if let error = visitor.error {
+      throw error // error: is not throwing as a consequence of 'predicate' throwing.
+    } else {
+      return visitor.count
+    }
+  }
 }
 ```
 
-Now, the expression `Result(catching: callCat)` will produce an instance of type `Result<Cat, CatError>`, relying on type inference to propagate the thrown error type from `callCat` to the `Failure` type. The aforementioned relationship between thrown types specified as `any Error` and `Never` makes this new formulation subsume existing use cases.
+Walking through the code, we can convince ourselves that `MyNodeVisitor.error` will only ever be set as a result of the predicate throwing an error, so this code semantically fulfills the contract of `rethrows`. However, the Swift compiler's rethrows checking cannot perform such an analysis, so it will reject this function. The limitation on `rethrows` has prompted at least [two](https://forums.swift.org/t/pitch-rethrows-unchecked/10078) [pitches](https://forums.swift.org/t/pitch-fix-rethrows-checking-and-add-rethrows-unsafe/44863) to add an "unsafe" or "unchecked" rethrows variant, turning this into a runtime-checked contract. 
+
+Typed throws offer a compelling alternative: one can capture the error type of the closure argument in a generic parameter, and use that consistently throughout. This is immediately useful for maintaining precise typed error information in generic code that  only rethrows the error from its closure arguments, like `map:
+
+```swift
+extension Collection {
+  func map<U, E: Error>(body: (Element) throws(E) -> U) throws(E) -> [U] {
+    var result: [U] = []
+    for element in self {
+      result.append(try body(element))
+    }
+    return result
+  }
+}
+```
+
+When given a closure that throws `CatError`, this formulation of `map` will throw `CatError`. When given a closure that doesn't throw, `E` will be `Never`, so `map` is non-throwing.
+
+This approach extends to our `countNodes` example:
+
+```swift
+/// Count number of nodes in the tree that match a particular predicate
+func countNodes<E: Error>(in tree: Node, matching predicate: (Node) throws(E) -> Bool) throws(E) -> Int {
+  class MyNodeVisitor<E>: NodeVisitor {
+    var error: E? = nil
+    var count: Int = 0
+    var predicate: (Node) throws(E) -> Bool
+
+    init(predicate: @escaping (Node) throws(E) -> Bool) {
+      self.predicate = predicate
+    }
+    
+    override func visit(node: Node) {
+    	do {
+        if try predicate(node) {
+          count = count + 1
+        }
+      } catch let localError {
+        error = error ?? localError // okay, error has type E?, localError has type E
+      } 
+    }
+  }
+  
+  return try withoutActuallyEscaping(predicate) { predicate in
+    let visitor = MyNodeVisitor(predicate: predicate)
+    visitor.visitTree(node)
+    if let error = visitor.error {
+      throw error // okay! error has type E, which can be thrown out of this function
+    } else {
+      return visitor.count
+    }
+  }
+}
+```
+
+Note that typed throws has elegantly solved our problem, because any throwing site that throws a value of type `E` is accepted. When the closure argument doesn't throw, `E` is inferred to `Never`, and (dynamically) no instance of it will ever be created.
 
 ### When to use typed throws
 
@@ -354,9 +424,9 @@ Typed throws makes it possible to strictly specify the thrown error type of a fu
 func loadBytes(from fileName: String) async throws(FileSystemError) -> [UInt8]
 ```
 
-Internally, it is using some file system library that throws a `FileSystemError`, which it then republishes directly. However, the fact that the error was specified to always be a `FileSystemError` will hamper further evolution of this API: for example, it might be reasonable for this API to start supporting loading bytes from other sources (say, a network connection or database) when the file name matches some other schema. However, errors from those other libraries will not be `FileSystemError` instances, which poses a problem for `loadBytes(from:)`: it either needs to translate the errors from other libraries into `FileSystemError` (if that's even possible), or it needs to break its API contract by adopting a more general error type (or untyped `throws`).
+Internally, it is using some file system library that throws a `FileSystemError`, which it then republishes directly. However, the fact that the error was specified to always be a `FileSystemError` may hamper further evolution of this API: for example, it might be reasonable for this API to start supporting loading bytes from other sources (say, a network connection or database) when the file name matches some other schema. However, errors from those other libraries will not be `FileSystemError` instances, which poses a problem for `loadBytes(from:)`: it either needs to translate the errors from other libraries into `FileSystemError` (if that's even possible), or it needs to break its API contract by adopting a more general error type (or untyped `throws`).
 
-The `loadBytes(from:)` function is not a good candidate for typed throws. Indeed, even with the addition of typed throws to Swift, untyped `throws` is the better default for most Swift code, which is passing through errors for presentation rather than trying to exhaustively handle them. Typed throws is potentially applicable in the following circumstances:
+The `loadBytes(from:)` function is probably not a good candidate for typed throws. Indeed, even with the addition of typed throws to Swift, untyped `throws` is the better default for most Swift code, which is passing through errors from lower-level libraries for presentation rather than trying to exhaustively handle them. Typed throws is potentially applicable in the following circumstances:
 
 1. In dependency-free code that will only ever produce errors itself.
 2. In code that stays within a module or package where you always want to handle the error, so it's a purely an implementation detail.
@@ -570,113 +640,67 @@ func f() {
 
 >  **Note**: Exhaustiveness checking in the general is expensive at compile time, and the existing language uses the presence of an unconditional `catch` block as the indicator for an exhaustive `do...catch`. See the section on closure thrown type inference for more details about inferring throwing closures.
 
-#### Typed `rethrows`
+#### `rethrows`
 
-A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
-
-For example, consider a function `foo` that takes a closure throwing a type `E` (which maybe be `any Error` or `Never` for untyped throws and non-throwing functions). It will only throw when its argument throws, and then only a value of the thrown type of that argument, `E`:
+A function marked `rethrows` throws only when one of its closure parameters throws. It is typically used with higher-order functions, such as the `map` operation on a collection:
 
 ```swift
-func foo<E: Error>(closure: () throws(E) -> Void) rethrows(E)
-```
-
-One could have multiple arguments of function type that that all throw the same error type, e.g.,
-
-```swift
-func foo<E: Error>(f: () throws(E) -> Void, g: () throws(E) -> Void) rethrows(E)
-```
-
-Multiple arguments of function type could throw different error types. The implementation would be responsible either for translating those errors to a specific concrete error type:
-
-```swift
-func translateErrors<E1: Error, E2: Error>(
-  f: () throws(E1) -> Void, 
-  g: () throws(E2) -> Void
-) rethrows(GenericError) {
-  do {
-    try f()
-  } catch {
-    throw GenericError(message: "E1: \(error)")
-  }
-  
-  do {
-    try g()
-  } catch {
-    throw GenericError(message: "E2: \(error)")
+extension Collection {
+  func map<U>(body: (Element) throws -> U) rethrows -> [U] {
+    var result: [U] = []
+    for element in self {
+      result.append(try body(element))
+    }
+    return result
   }
 }
 ```
 
-If called with non-throwing closure arguments, `translateErrors` will not throw. If either of the closure arguments can throw, then `translateErrors` can throw---but will always throw a `GenericError`. 
-
-Alternately, one can specify a suitably-generic thrown error type when rethrowing:
+When provided with a throwing closure, `map` can throw, and it chooses to directly throw the same error as the body. This contract can be more precisely modeled using typed throws:
 
 ```swift
-func untypedOrNonthrowing<E1: Error, E2: Error>(
-  f: () throws(E1) -> Void, 
-  g: () throws(E2) -> Void
-) rethrows(any Error) {
-  try f()
-  try g()
+extension Collection {
+  func map<U, E: Error>(body: (Element) throws(E) -> U) throws(E) -> [U] {
+    var result: [U] = []
+    for element in self {
+      result.append(try body(element))
+    }
+    return result
+  }
 }
 ```
 
-If called with non-throwing closure arguments, `untypedOrNonthrowing` will not throw. If either of the closure arguments can throw, then `untypedOrNonthrowing` can throw `any Error`. 
+Now, when `map` is provided with a closure that throws `E`, it can only throw an `E`. For a non-throwing closure, `E` will be `Never` and `map` is non-throwing. For an untyped throwing closure, `E` will be `any Error` and we get the same type-level behavior as the `rethrows` version of `map`.
 
-A function can be `rethrows` without specifying any thrown error type. Prior to typed throws, this always meant that it would throw `any Error` if any of the closure arguments throws. For typed throws, we define `rethrows` to be equivalent to `rethrows(errorUnion(E1, E2, ..., EN))`, where each `Ei` is the thrown error type for one of the closure parameters, using the same ideas from `do...catch`statements. This definition is ideal for operations that rethrow only what their closure arguments throw, such as the `map` operation on collections:
-
-```swift
-func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
-// equivalent to
-func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows(E) -> [T]
-```
-
-If there are multiple closure parameters that have different thrown error types, the rethrown type will be `any Error`.
+However, because `rethrows` uses untyped errors, `map` would be permitted to substitute a different error type that, for example, provides more information about the failing element:
 
 ```swift
-func manyErrors<E1: Error, E2: Error>(
-  f: () throws(E1) -> Void, 
-  g: () throws(E2) -> Void
-) rethrows { ... } // equivalent to rethrows(any Error)
+struct MapError<Element>: Error {
+  var failedElement: Element
+  var underlyingError: any Error
+}
+
+extension Collection {
+  func map<U>(body: (Element) throws -> U) rethrows -> [U] {
+    var result: [U] = []
+    for element in self {
+      do {
+        result.append(try body(element))
+      } catch {
+        // Provide more information about the failure
+        throw MapError(failedElement: element, underlyingError: error)
+      }
+    }
+    return result
+  }
+}
 ```
 
->  **Note**: There is a small chance of this rule causing confusion, because while `throws` is equivalent to `throws(any Error)`, `rethrows` will infer the error type differently. It is somewhat contrived, but one could imagine an API that begins like this:
->
-> ```swift
-> func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
->   try f()
-> }
-> ```
->
-> possibly evolving to try to translate the error:
->
-> ```swift
-> func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
->   do {
-> 	  try f()
-> 	} catch {
->     throw GenericError(message: "\(error)") // error: GenericError is not an E
->   }
-> }
-> ```
->
-> However, this seems unlikely to cause problems in practice, and the only real way to avoid it would be to prohibit the use of `rethrows` (with no specified thrown type) when any of the closure parameters use typed throws.
+Typed throws, as presented here, is not able to express the contract of this function.
 
-The vast majority of `rethrows` functions will directly throw whatever is thrown from their closure parameters, without generating their own errors or performing any translation. However, the simplest formulation of a rethrowing function such as `map`:
+The Swift standard library does not perform error substitution of this form, and its contract for operations like `map` is best expressed by typed throws as shown above. It is likely that many existing `rethrows` functions are better expressed with typed throws. However, not *all* `rethrows` functions can be expressed by typed throws, if they are performing error substitution like this last `map`. 
 
-```swift
-func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
-```
-
-says that `map` can throw `any Error` whenever its `transform` argument throws an exception, i.e., it will lose typed throws information. A more useful formulation is what is proposed above, i.e.,
-
-```swift
-func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
-```
-
-which states that `map` will only throw errors of the same type as `transform` does. As a special case, when `rethrows` is not provided with a typed error, we propose to treat any untyped `throws` on a closure parameter as if it were written `throws(Ei)`, where `Ei` is a synthesized generic parameter for that closure parameter `i` that is required to conform to the `Error` protocol. This way, the simplest form of `rethrows` will maintain precise type information. If the body of the function tries to throw anything else (i.e., by doing error translation), it will produce an error.
-
-> **Swift 6**: This rule is convenient, but will break existing code that uses `rethrows` and performs any kind of error translation. Therefore, we delay this specific change in the semantics of untyped `rethrows` with untyped `throws` closure parameters until Swift 6.
+Therefore, this proposal does not change the semantics of `rethrows` at all: it remains untyped, and it is ill-formed to attempt to provide a thrown error type to a `rethrows` function. The Alternatives Considered section provides several options for `rethrows`, which can become the subject of a future proposal.
 
 #### Opaque thrown error types
 
@@ -687,6 +711,24 @@ func doSomething() throws(some Error) { ... }
 ```
 
 The opaque thrown error type is like a result type, so the concrete type of the error is chosen by the `doSomething` function itself, and could change from one version to the next. The caller only knows that the error type conforms to the `Error` protocol; the concrete type won't be knowable until runtime.
+
+Opaque result types can be used as an alternative to existentials (`any Error`) when there is a fixed number of potential error types that might be thrown , and we either can't (due to being in an embedded environment) or don't want to (for performance or code-evolution reasons) expose the precise error type. For example, one could use a suitable `Either` type under the hood:
+
+```swift
+func doSomething() throws(some Error) { 
+  do {
+    try callCat()
+  } catch {
+    throw Either<CatError, KidError>.left(error)
+  }
+  
+  do {
+    try callKids()
+  } catch {
+    throw Either<CatError, KidError>.right(error)
+  }
+}
+```
 
 Due to the contravariance of parameters, an opaque thrown error type that occurs within a function parameter will be an [opaque parameter](https://github.com/apple/swift-evolution/blob/main/proposals/0341-opaque-parameters.md). This means that the closure argument itself will choose the type, so
 
@@ -699,12 +741,6 @@ is equivalent to
 ```swift
 func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
 ```
-
-#### Throwing in asynchronous `for..in` loops
-
-The asynchronous `for..in` loop uses an underspecified notion of ["rethrowing" protocol conformances](https://github.com/apple/swift-evolution/blob/main/proposals/0298-asyncsequence.md#rethrows) to make it possible for iteration over an asynchronous sequence to be throwing when the sequence's `next()` operation may throw, and non-throwing otherwise. With typed throws, the `AsyncSequence` protocol will gain an associated type `Failure` that provides the thrown error type for the iterator's `next()` operation (see details in the section *Standard library adoption*).
-
-When a `for..in` loop iterators over an `AsyncSequence`, the iteration can throw the `Failure` type of the `AsyncSequence`. When the `Failure` type is `Never`, the loop cannot throw and does not require `try`. This provides a mechanism for handling throwing and non-throwing asynchronous `for..in` loops consistently.
 
 #### `async let`
 
@@ -903,19 +939,15 @@ struct Ragdoll: CatFeeder {
 
 #### `Error` requirement inference
 
-When a function signature uses a generic parameter or associated type as a thrown type, that generic parameter or associated type is implicitly inferred to conform to the `Error` type. For example, given this declaration:
+When a function signature uses a generic parameter or associated type as a thrown type, that generic parameter or associated type is implicitly inferred to conform to the `Error` type. For example, given this declaration for `map`:
 
 ```swift
-func f<E>(e: E) throws(E) { ... }
+func map<T, E>(body: (Element) throws(E) -> T) throws(E) { ... }
 ```
 
-the function `f` has an inferred requirement `E: Error`. 
+the function has an inferred requirement `E: Error`. 
 
-### Standard library adoption
-
-There are a number of places in the standard library where the adoption of typed throws will help maintain thrown types through user code. This section details those changes to the standard library:
-
-#### Converting between `throws` and `Result`
+### Converting between `throws` and `Result`
 
 `Result`'s [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) operation translates a throwing closure into a `Result` instance. It's currently defined only when the `Failure` type is `any Error`, i.e.,
 
@@ -943,157 +975,11 @@ should use `Failure` as the thrown error type:
 func get() throws(Failure) -> Success
 ```
 
-#### `Task` creation and completion
-
-The [`Task`](https://developer.apple.com/documentation/swift/task) APIs have a `Failure` type similarly to `Result`, but use a pattern of overloading on `Failure == any Error` and `Failure == Never` to handling throwing and non-throwing versions. For example, the `Task` initializer is defined as the following overloaded pair:
-
-```swift
-init(priority: TaskPriority?, operation: () async -> Success) where Failure == Never
-init(priority: TaskPriority?, operation: () async throws -> Success) where Failure == any Error
-```
-
-These two initializers can be replaced with a single initializer using typed throws:
-
-```swift
-init(priority: TaskPriority?, operation: () async throws(Failure) -> Success)
-```
-
-The result is both more expressive (maintaining typed error information) and simpler (because a single initializer suffices). The same transformation can be applied to the `detached` function that creates detached threads, where the two overloads are replaced with the following:
-
-```swift
-@discardableResult
-static func detached(
-    priority: TaskPriority? = nil,
-    operation: @escaping () async throws(Failure) -> Success
-) -> Task<Success, Failure>
-```
-
-Finally, the `value` property of `Task` is similarly overloaded:
-
-```swift
-extension Task where Failure == Never {}
-  var value: Success { get async }
-}
-extension Task where Failure == any Error {
-  var value: Success { get async throws }
-}
-```
-
-These two can be replaced with a single property:
-
-```swift
-var value: Success { get async throws(Failure) }
-```
-
-#### Continuations
-
-The `with(Checked|Unsafe)ThrowingContinuation` operations should incorporate typed throws, e.g.,:
-
-```swift
-public func withCheckedThrowingContinuation<T, Failure: Error>(
-    function: String = #function,
-    _ body: (CheckedContinuation<T, Failure>) -> Void
-) async throws(Failure) -> T
-
-public func withUnsafeThrowingContinuation<T, Failure: Error>(
-  _ fn: (UnsafeContinuation<T, Failure>) -> Void
-) async throws(Failure) -> T
-```
-
-#### Task cancellation
-
-A few of the `Task` APIs are documented to only throw `CancellationError` and can adopt typed throws. For example, `checkCancellation`:
-
-```swift
-public static func checkCancellation() throws(CancellationError)
-```
-
-Similarly, the `sleep` APIs will only throw on cancellation:
-
-```swift
-public static func sleep<C: Clock>(
-  until deadline: C.Instant,
-  tolerance: C.Instant.Duration? = nil,
-  clock: C = ContinuousClock()
-) async throws(CancellationError)
-
-public static func sleep<C: Clock>(
-  for duration: C.Instant.Duration,
-  tolerance: C.Instant.Duration? = nil,
-  clock: C = ContinuousClock()
-) async throws(CancellationError)
-
-```
-
-#### `AsyncIteratorProtocol` associated type
-
-`AsyncSequence` iterators can throw during iteration, as described by the `throws` on the `next()` operation on async iterators:
-
-```swift
-public protocol AsyncIteratorProtocol {
-  associatedtype Element
-  mutating func next() async throws -> Element?
-}
-```
-
-Introduce a new associated type `Failure` into this protocol to use as the thrown error type of `next()`, i.e.,
-
-```swift
-associatedtype Failure: Error = any Error
-mutating func next() async throws(Failure) -> Element?
-```
-
-Then introduce an associated type `Failure` into `AsyncSequence` that provides a more convenient name for this type, i.e.,
-
-```swift
-associatedtype Failure where AsyncIterator.Failure == Failure
-```
-
-With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
-
-With the new `Failure` type in place, we can adopt [primary asociated types](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md) for these protocols:
-
-```swift
-public protocol AsyncIteratorProtocol<Element, Failure> {
-  associatedtype Element
-  associatedtype Failure: Error = any Error
-  mutating func next() async throws(Failure) -> Element?
-}
-
-public protocol AsyncSequence<Element, Failure> {
-  associatedtype AsyncIterator: AsyncIteratorProtocol
-  associatedtype Element where AsyncIterator.Element == Element
-  associatedtype Failure where AsyncIterator.Failure == Failure
-  __consuming func makeAsyncIterator() -> AsyncIterator
-}
-```
-
-This allows the use of `AsyncSequence` with both opaque types (`some AsyncSequence<String, any Error>`) and existential types (`any AsyncSequence<Image, NetworkError>`). 
-
-#### Operations that `rethrow`
-
-The standard library contains a large number of operations that `rethrow`. In all cases, the standard library will only throw from a call to one of the closure arguments: it will never substitute a different thrown error type. Therefore, update every `rethrows` function in the standard library to carry the thrown error type from the closure parameter to the result, i.e., the optional `map` operation will be change from:
-
-```swift 
-public func map<U>(
-  _ transform: (Wrapped) throws -> U
-) rethrows -> U?
-```
-
-to
-
-```swift
-public func map<U, E>(
-  _ transform: (Wrapped) throws(E) -> U
-) rethrows(E) -> U?
-```
-
 ## Source compatibility
 
-This proposal has called out three specific places where the introduction of typed throws into the language will affect source compatiblity. In each place, a minimal source-breaking aspect of the change has been separated out so that it will be enabled only in the next major language version (Swift 6), and Swift 5 has these additional limitations:
+This proposal has called out two specific places where the introduction of typed throws into the language will affect source compatibility. In each place, a minimal source-breaking aspect of the change has been separated out so that it will be enabled only in the next major language version (Swift 6), and Swift 5 has these additional limitations:
 
 * For `do...catch`, the caught error type will be `any Error` if there are no `try` expressions.
-* For `rethrows`, untyped closure parameters are treated as throwing `any Error`
 * For closure thrown error type inference, the thrown error type will be `any Error` if there are no `try` expressions.
 
 To make use of the full typed throws semantics in Swift 5, developers can enable the [upcoming feature flag](https://github.com/apple/swift-evolution/blob/main/proposals/0362-piecemeal-future-features.md) named `FullTypedThrows`. 
@@ -1102,7 +988,7 @@ Note that the source compatibility arguments in this proposal are there to ensur
 
 ## Effect on ABI stability
 
-The ABI between an function with an untyped throws and one that uses typed throws will be different, so that typed throws can benefit from knowing the precise type. For most of the standard library changes, an actual ABI break can be avoided because the implementations can make use of [`@backDeploy`](https://github.com/apple/swift-evolution/blob/main/proposals/0376-function-back-deployment.md). However, the suggested change to `AsyncIteratorProtocol` might not be able to be made in a manner that does not break ABI stability.
+The ABI between an function with an untyped throws and one that uses typed throws will be different, so that typed throws can benefit from knowing the precise type.
 
 ## Effect on API resilience
 
@@ -1159,6 +1045,51 @@ func load(from dataLoader: dataLoader) {
 Here, the `DataLoader.load()` function could be updated to throw `DataLoaderError` and this particular client code would still work, because `DataLoaderError` is convertible to `any Error`. Note that clients could still be broken by this kind of change, for example overrides of an `open` function, declarations that satisfy a protocol requirement, or code that relies on the precide error type (say, by overloading). However, such a change is far less likely to break clients of an API than loosening thrown type informance.
 
 ## Future directions
+
+### Standard library operations that `rethrow`
+
+The standard library contains a large number of operations that `rethrow`. In all cases, the standard library will only throw from a call to one of the closure arguments: it will never substitute a different thrown error type. Therefore, we should considering updating every `rethrows` function in the standard library to carry the thrown error type from the closure parameter to the result, i.e., the optional `map` operation will be change from:
+
+```swift 
+public func map<U>(
+  _ transform: (Wrapped) throws -> U
+) rethrows -> U?
+```
+
+to
+
+```swift
+public func map<U, E>(
+  _ transform: (Wrapped) throws(E) -> U
+) rethrows(E) -> U?
+```
+
+With some work, this change can be performed in a backward-compatible manner. However, there are a large number of `rethrows` operations in the standard library, so we leave the full update to a separate proposal.
+
+### Concurrency library adoption
+
+The concurrency library has a number of places that could benefit from the adoption of typed throws, including `Task` creation and completion, continuations, task cancellation, task groups, and async sequences and streams. 
+
+`Task` is similar to `Result` because it also carries a `Failure` type that could benefit from typed throws. Continuations and task groups could propagate typed throws information from closures to make more of the library usable with precise thrown type information.
+
+`AsyncSequence`, and the asynchronous `for..in` loop that depends on it, could be improved by using typed throws. Both `AsyncIteratorProtocol` and `AsyncSequence` could be augmented with a `Failure` associated type that is used for the thrown error type of `next()`, and will be used by the asynchronous `for..in` loop to determine whether the sequence can throw. This can be combined with [primary associated types](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md) to make it possible to use existentials such as `any AsyncSequence<Image, NetworkError>`:
+
+```swift
+public protocol AsyncIteratorProtocol<Element, Failure> {
+  associatedtype Element
+  associatedtype Failure: Error = any Error
+  mutating func next() async throws(Failure) -> Element?
+}
+
+public protocol AsyncSequence<Element, Failure> {
+  associatedtype AsyncIterator: AsyncIteratorProtocol
+  associatedtype Element where AsyncIterator.Element == Element
+  associatedtype Failure where AsyncIterator.Failure == Failure
+  __consuming func makeAsyncIterator() -> AsyncIterator
+}
+```
+
+As with the standard library, the scope of potential changes to the concurrency library to make full use of typed throws is large, and there are likely to be some interesting design questions. Therefore, we leave it to a follow-on proposal, noting only that whatever form `AsyncSequence` takes with typed throws, the language support for asynchronous `for..in` will need to adjust.
 
 ### Specific thrown error types for distributed actors
 
@@ -1246,10 +1177,93 @@ f(Either<Never, Never>.self) // Fn should be equivalent to () -> Void
 f(Pair<Never, Int>.self)     // Fn should be equivalent to () -> Void
 ```
 
-The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. Therefore, we stick with the much simpler rule where `Never` is the only uninhabited type considered to be special.
+The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. 
+
+The most plausible route here involves the introduction of an `Uninhabited` protocol, which could then be used with conditional conformances to propagate the "uninhabited" type information. For example, `Never` would conform to `Uninhabited`, and one could conditionally conform a generic error type. For example:
+
+```swift
+struct WrappedError<E: Error>: Error {
+  var wrapped: E
+}
+
+extension WrappedError: Uninhabited where E: Uninhabited { }
+```
+
+With this, one can express "rethrowing" behavior that wrappers the underlying error via typed throws:
+
+```swift
+func translatesError<E: Error>(f: () throws(E) -> Void) throws(WrappedError<E>) { ... }
+```
+
+Here, when give a non-throwing closure for `f` (which infers `E = Never`), `translatesError` is known not to throw because `WrappedError<Never>` is known to be uninhabited (via the conditional conformance). This approach extends to the use of an `Either` type to capture errors:
+
+```swift
+extension Either: Uninhabited when Left: Uninhabited, Right: Uninhabited { }
+```
+
+However, it breaks down when there are two such generic error parameters for something like `WrappedError`, because having either one of them be `Uninhabited` makes the struct uninhabited, and the generics system does not permit disjunctive constraints like that.
+
+Extending from `Never` to arbitrary uninhabited types has some benefits, but requires enough additional design work and complexity that it should constitute a separate proposal. Therefore, we stick with the simpler rule where `Never` is the only uninhabited type considered to be special.
+
+### Typed `rethrows`
+
+A function marked `rethrows` throws only when one or more of its closure arguments throws. As note previously, typed throws allows one to more precisely express when the function only rethrows exactly the error from its closure, without translation, as demonstrated with `map`:
+
+```swift
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) throws(E) -> [T]
+```
+
+However, it cannot express rethrowing behavior when the function is performing translation of errors. For example, consider the following:
+
+```swift
+func translateErrors<E1: Error, E2: Error>(
+  f: () throws(E1) -> Void, 
+  g: () throws(E2) -> Void
+) ??? {
+  do {
+    try f()
+  } catch {
+    throw GenericError(message: "E1: \(error)")
+  }
+  
+  do {
+    try g()
+  } catch {
+    throw GenericError(message: "E2: \(error)")
+  }
+}
+```
+
+This function will only throw when `f` or `g` throw, and in both cases will translate the errors into `GenericError`. With this proposal, there are two options for specifying the error-handling behavior of `translateErrors`, neither of which is precise:
+
+* `rethrows` correctly communicates that this function throws only when the arguments for `f` or `g` do, but the thrown error type is treated as `any Error`.
+* `throws(GenericError)` correctly communicates that this function throws errors of type `GenericError`, but not that it throws when the argument for `f` or `g` do.
+
+One way to address this would be to allow `rethrows` to specify the thrown error type, e.g., `rethrows(GenericError)`, which captures both of the aspects of how this function behavies---when it throws, and what specific error type it `throws`.  
+
+With typed `rethrows`, a bare `rethrows` could be treated as syntactic sugar for `rethrows(any Error)`, similarly to how `throws` is syntactic sugar for `throws(any Error)`. This extension is source-compatible and allows one to express more specific error types with throwing behavior.
+
+However, this definition of `rethrows` is somewhat unfortunate in a typed-throws world, because it is likely the wrong default. Many use cases for `rethrows` do not involve error translation, and would be better served by using typed throws in the manner that `map` does. If `rethrows` were not already part of the Swift language prior to this proposal, it's likely that we either would not introduce the feature at all, or would treat it as syntactic sugar for typed throws that introduces a generic parameter for the error type that is used for the thrown type of the closure parameters and the function itself. For example:
+
+```swift
+// rethrows could try rethrows as syntactic sugar..
+func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
+// for typed errors:
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) throws(E) -> [T]
+```
+
+Removing or changing the semantics of `rethrows` would be a source-incompatible change, so we leave such concerns to a later proposal.
 
 ## Revision history
 
+* Revision 3:
+  * Move the the typed `rethrows` feature out of this proposal, and into Alternatives Considered. Once we gain more experience with typed throws, we can decide what to do with `rethrows`.
+  * Expand the discussion on allowing all uninhabited error types to mean "non-throwing".
+  * Provide a better example for inferring `Error` conformance on generic parameters.
+  * Move the replacement of `rethrows` in the standard library with typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
+  * Move the concurrency library changes for typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
+  * Add an extended example of replacing the need for `rethrows(unsafe)` with typed throws.
+  * Provide a more significant example of opaque thrown errors that makes use of `Either` internally.
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
