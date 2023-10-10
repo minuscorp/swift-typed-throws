@@ -1201,7 +1201,33 @@ f(Either<Never, Never>.self) // Fn should be equivalent to () -> Void
 f(Pair<Never, Int>.self)     // Fn should be equivalent to () -> Void
 ```
 
-The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. Therefore, we stick with the much simpler rule where `Never` is the only uninhabited type considered to be special.
+The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. 
+
+The most plausible route here involves the introduction of an `Uninhabited` protocol, which could then be used with conditional conformances to propagate the "uninhabited" type information. For example, `Never` would conform to `Uninhabited`, and one could conditionally conform a generic error type. For example:
+
+```swift
+struct WrappedError<E: Error>: Error {
+  var wrapped: E
+}
+
+extension WrappedError: Uninhabited where E: Uninhabited { }
+```
+
+With this, one can express "rethrowing" behavior that wrappers the underlying error via typed throws:
+
+```swift
+func translatesError<E: Error>(f: () throws(E) -> Void) throws(WrappedError<E>) { ... }
+```
+
+Here, when give a non-throwing closure for `f` (which infers `E = Never`), `translatesError` is known not to throw because `WrappedError<Never>` is known to be uninhabited (via the conditional conformance). This approach extends to the use of an `Either` type to capture errors:
+
+```swift
+extension Either: Uninhabited when Left: Uninhabited, Right: Uninhabited { }
+```
+
+However, it breaks down when there are two such generic error parameters for something like `WrappedError`, because having either one of them be `Uninhabited` makes the struct uninhabited, and the generics system does not permit disjunctive constraints like that.
+
+Extending from `Never` to arbitrary uninhabited types has some benefits, but requires enough additional design work and complexity that it should constitute a separate proposal. Therefore, we stick with the simpler rule where `Never` is the only uninhabited type considered to be special.
 
 ### Typed `rethrows`
 
@@ -1256,6 +1282,7 @@ Removing or changing the semantics of `rethrows` would be a source-incompatible 
 
 * Revision 3:
   * Move the the typed `rethrows` feature out of this proposal, and into Alternatives Considered. Once we gain more experience with typed throws, we can decide what to do with `rethrows`.
+  * Expand the discussion on allowing all uninhabited error types to mean "non-throwing".
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
