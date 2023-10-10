@@ -30,7 +30,7 @@
   + [Throwing and catching with typed throws](#throwing-and-catching-with-typed-throws)
     - [Throwing within a function that declares a typed error](#throwing-within-a-function-that-declares-a-typed-error)
     - [Catching typed thrown errors](#catching-typed-thrown-errors)
-    - [Typed `rethrows`](#typed--rethrows-)
+    - [`rethrows`](#rethrows)
     - [Opaque thrown error types](#opaque-thrown-error-types)
     - [Throwing in asynchronous `for..in` loops](#throwing-in-asynchronous--forin--loops)
     - [`async let`](#-async-let-)
@@ -58,6 +58,7 @@
   + [Thrown error type syntax](#thrown-error-type-syntax)
   + [Multiple thrown error types](#multiple-thrown-error-types)
   + [Treat all uninhabited thrown error types as nonthrowing](#treat-all-uninhabited-thrown-error-types-as-nonthrowing)
+  + [Typed `rethrows`](#typed-rethrows)
 * [Revision history](#revision-history)
 
 ## Introduction
@@ -571,113 +572,67 @@ func f() {
 
 >  **Note**: Exhaustiveness checking in the general is expensive at compile time, and the existing language uses the presence of an unconditional `catch` block as the indicator for an exhaustive `do...catch`. See the section on closure thrown type inference for more details about inferring throwing closures.
 
-#### Typed `rethrows`
+#### `rethrows`
 
-A function marked `rethrows` throws only when one of its closure parameters throws. The thrown error type for a particular call to the `rethrows` function depends on the actual arguments to the call, and how typed throws are expressed within the function signature.
-
-For example, consider a function `foo` that takes a closure throwing a type `E` (which maybe be `any Error` or `Never` for untyped throws and non-throwing functions). It will only throw when its argument throws, and then only a value of the thrown type of that argument, `E`:
+A function marked `rethrows` throws only when one of its closure parameters throws. It is typically used with higher-order functions, such as the `map` operation on a collection:
 
 ```swift
-func foo<E: Error>(closure: () throws(E) -> Void) rethrows(E)
-```
-
-One could have multiple arguments of function type that that all throw the same error type, e.g.,
-
-```swift
-func foo<E: Error>(f: () throws(E) -> Void, g: () throws(E) -> Void) rethrows(E)
-```
-
-Multiple arguments of function type could throw different error types. The implementation would be responsible either for translating those errors to a specific concrete error type:
-
-```swift
-func translateErrors<E1: Error, E2: Error>(
-  f: () throws(E1) -> Void, 
-  g: () throws(E2) -> Void
-) rethrows(GenericError) {
-  do {
-    try f()
-  } catch {
-    throw GenericError(message: "E1: \(error)")
-  }
-  
-  do {
-    try g()
-  } catch {
-    throw GenericError(message: "E2: \(error)")
+extension Collection {
+  func map<U>(body: (Element) throws -> U) rethrows -> [U] {
+    var result: [U] = []
+    for element in self {
+      result.append(try body(element))
+    }
+    return result
   }
 }
 ```
 
-If called with non-throwing closure arguments, `translateErrors` will not throw. If either of the closure arguments can throw, then `translateErrors` can throw---but will always throw a `GenericError`. 
-
-Alternately, one can specify a suitably-generic thrown error type when rethrowing:
+When provided with a throwing closure, `map` can throw, and it chooses to directly throw the same error as the body. This contract can be more precisely modeled using typed throws:
 
 ```swift
-func untypedOrNonthrowing<E1: Error, E2: Error>(
-  f: () throws(E1) -> Void, 
-  g: () throws(E2) -> Void
-) rethrows(any Error) {
-  try f()
-  try g()
+extension Collection {
+  func map<U, E: Error>(body: (Element) throws(E) -> U) throws(E) -> [U] {
+    var result: [U] = []
+    for element in self {
+      result.append(try body(element))
+    }
+    return result
+  }
 }
 ```
 
-If called with non-throwing closure arguments, `untypedOrNonthrowing` will not throw. If either of the closure arguments can throw, then `untypedOrNonthrowing` can throw `any Error`. 
+Now, when `map` is provided with a closure that throws `E`, it can only throw an `E`. For a non-throwing closure, `E` will be `Never` and `map` is non-throwing. For an untyped throwing closure, `E` will be `any Error` and we get the same type-level behavior as the `rethrows` version of `map`.
 
-A function can be `rethrows` without specifying any thrown error type. Prior to typed throws, this always meant that it would throw `any Error` if any of the closure arguments throws. For typed throws, we define `rethrows` to be equivalent to `rethrows(errorUnion(E1, E2, ..., EN))`, where each `Ei` is the thrown error type for one of the closure parameters, using the same ideas from `do...catch`statements. This definition is ideal for operations that rethrow only what their closure arguments throw, such as the `map` operation on collections:
-
-```swift
-func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
-// equivalent to
-func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows(E) -> [T]
-```
-
-If there are multiple closure parameters that have different thrown error types, the rethrown type will be `any Error`.
+However, because `rethrows` uses untyped errors, `map` would be permitted to substitute a different error type that, for example, provides more information about the failing element:
 
 ```swift
-func manyErrors<E1: Error, E2: Error>(
-  f: () throws(E1) -> Void, 
-  g: () throws(E2) -> Void
-) rethrows { ... } // equivalent to rethrows(any Error)
+struct MapError<Element>: Error {
+  var failedElement: Element
+  var underlyingError: any Error
+}
+
+extension Collection {
+  func map<U>(body: (Element) throws -> U) rethrows -> [U] {
+    var result: [U] = []
+    for element in self {
+      do {
+        result.append(try body(element))
+      } catch {
+        // Provide more information about the failure
+        throw MapError(failedElement: element, underlyingError: error)
+      }
+    }
+    return result
+  }
+}
 ```
 
->  **Note**: There is a small chance of this rule causing confusion, because while `throws` is equivalent to `throws(any Error)`, `rethrows` will infer the error type differently. It is somewhat contrived, but one could imagine an API that begins like this:
->
-> ```swift
-> func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
->   try f()
-> }
-> ```
->
-> possibly evolving to try to translate the error:
->
-> ```swift
-> func takeError<E: Error>(f: () throws(E) -> Void) rethrows { // equivalent to rethrows(E)
->   do {
-> 	  try f()
-> 	} catch {
->     throw GenericError(message: "\(error)") // error: GenericError is not an E
->   }
-> }
-> ```
->
-> However, this seems unlikely to cause problems in practice, and the only real way to avoid it would be to prohibit the use of `rethrows` (with no specified thrown type) when any of the closure parameters use typed throws.
+Typed throws, as presented here, is not able to express the contract of this function.
 
-The vast majority of `rethrows` functions will directly throw whatever is thrown from their closure parameters, without generating their own errors or performing any translation. However, the simplest formulation of a rethrowing function such as `map`:
+The Swift standard library does not perform error substitution of this form, and its contract for operations like `map` is best expressed by typed throws as shown above. It is likely that many existing `rethrows` functions are better expressed with typed throws. However, not *all* `rethrows` functions can be expressed by typed throws, if they are performing error substitution like this last `map`. 
 
-```swift
-func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
-```
-
-says that `map` can throw `any Error` whenever its `transform` argument throws an exception, i.e., it will lose typed throws information. A more useful formulation is what is proposed above, i.e.,
-
-```swift
-func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
-```
-
-which states that `map` will only throw errors of the same type as `transform` does. As a special case, when `rethrows` is not provided with a typed error, we propose to treat any untyped `throws` on a closure parameter as if it were written `throws(Ei)`, where `Ei` is a synthesized generic parameter for that closure parameter `i` that is required to conform to the `Error` protocol. This way, the simplest form of `rethrows` will maintain precise type information. If the body of the function tries to throw anything else (i.e., by doing error translation), it will produce an error.
-
-> **Swift 6**: This rule is convenient, but will break existing code that uses `rethrows` and performs any kind of error translation. Therefore, we delay this specific change in the semantics of untyped `rethrows` with untyped `throws` closure parameters until Swift 6.
+Therefore, this proposal does not change the semantics of `rethrows` at all: it remains untyped, and it is ill-formed to attempt to provide a thrown error type to a `rethrows` function. The Alternatives Considered section provides several options for `rethrows`, which can become the subject of a future proposal.
 
 #### Opaque thrown error types
 
@@ -1091,10 +1046,9 @@ public func map<U, E>(
 
 ## Source compatibility
 
-This proposal has called out three specific places where the introduction of typed throws into the language will affect source compatiblity. In each place, a minimal source-breaking aspect of the change has been separated out so that it will be enabled only in the next major language version (Swift 6), and Swift 5 has these additional limitations:
+This proposal has called out two specific places where the introduction of typed throws into the language will affect source compatibility. In each place, a minimal source-breaking aspect of the change has been separated out so that it will be enabled only in the next major language version (Swift 6), and Swift 5 has these additional limitations:
 
 * For `do...catch`, the caught error type will be `any Error` if there are no `try` expressions.
-* For `rethrows`, untyped closure parameters are treated as throwing `any Error`
 * For closure thrown error type inference, the thrown error type will be `any Error` if there are no `try` expressions.
 
 To make use of the full typed throws semantics in Swift 5, developers can enable the [upcoming feature flag](https://github.com/apple/swift-evolution/blob/main/proposals/0362-piecemeal-future-features.md) named `FullTypedThrows`. 
@@ -1249,8 +1203,59 @@ f(Pair<Never, Int>.self)     // Fn should be equivalent to () -> Void
 
 The runtime computation of "uninhabited" therefore carries significant cost in terms of the metadata required (one may need to walk all of the storage of the type) as well as the execution time to evaluate that metadata during runtime type formation. Therefore, we stick with the much simpler rule where `Never` is the only uninhabited type considered to be special.
 
+### Typed `rethrows`
+
+A function marked `rethrows` throws only when one or more of its closure arguments throws. As note previously, typed throws allows one to more precisely express when the function only rethrows exactly the error from its closure, without translation, as demonstrated with `map`:
+
+```swift
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) throws(E) -> [T]
+```
+
+However, it cannot express rethrowing behavior when the function is performing translation of errors. For example, consider the following:
+
+```swift
+func translateErrors<E1: Error, E2: Error>(
+  f: () throws(E1) -> Void, 
+  g: () throws(E2) -> Void
+) ??? {
+  do {
+    try f()
+  } catch {
+    throw GenericError(message: "E1: \(error)")
+  }
+  
+  do {
+    try g()
+  } catch {
+    throw GenericError(message: "E2: \(error)")
+  }
+}
+```
+
+This function will only throw when `f` or `g` throw, and in both cases will translate the errors into `GenericError`. With this proposal, there are two options for specifying the error-handling behavior of `translateErrors`, neither of which is precise:
+
+* `rethrows` correctly communicates that this function throws only when the arguments for `f` or `g` do, but the thrown error type is treated as `any Error`.
+* `throws(GenericError)` correctly communicates that this function throws errors of type `GenericError`, but not that it throws when the argument for `f` or `g` do.
+
+One way to address this would be to allow `rethrows` to specify the thrown error type, e.g., `rethrows(GenericError)`, which captures both of the aspects of how this function behavies---when it throws, and what specific error type it `throws`.  
+
+With typed `rethrows`, a bare `rethrows` could be treated as syntactic sugar for `rethrows(any Error)`, similarly to how `throws` is syntactic sugar for `throws(any Error)`. This extension is source-compatible and allows one to express more specific error types with throwing behavior.
+
+However, this definition of `rethrows` is somewhat unfortunate in a typed-throws world, because it is likely the wrong default. Many use cases for `rethrows` do not involve error translation, and would be better served by using typed throws in the manner that `map` does. If `rethrows` were not already part of the Swift language prior to this proposal, it's likely that we either would not introduce the feature at all, or would treat it as syntactic sugar for typed throws that introduces a generic parameter for the error type that is used for the thrown type of the closure parameters and the function itself. For example:
+
+```swift
+// rethrows could try rethrows as syntactic sugar..
+func map<T>(_ transform: (Element) throws -> T) rethrows -> [T]
+// for typed errors:
+func map<T, E: Error>(_ transform: (Element) throws(E) -> T) throws(E) -> [T]
+```
+
+Removing or changing the semantics of `rethrows` would be a source-incompatible change, so we leave such concerns to a later proposal.
+
 ## Revision history
 
+* Revision 3:
+  * Move the the typed `rethrows` feature out of this proposal, and into Alternatives Considered. Once we gain more experience with typed throws, we can decide what to do with `rethrows`.
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
