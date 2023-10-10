@@ -42,13 +42,7 @@
     - [Closure thrown type inference](#closure-thrown-type-inference)
     - [Associated type inference](#associated-type-inference)
     - [`Error` requirement inference](#-error--requirement-inference)
-  + [Standard library adoption](#standard-library-adoption)
-    - [Converting between `throws` and `Result`](#converting-between--throws--and--result-)
-    - [`Task` creation and completion](#-task--creation-and-completion)
-    - [Continuations](#continuations)
-    - [Task cancellation](#task-cancellation)
-    - [`AsyncIteratorProtocol` associated type](#-asynciteratorprotocol--associated-type)
-    - [Operations that `rethrow`](#operations-that--rethrow-)
+  + [Converting between `throws` and `Result`](#converting-between--throws--and--result-)
 * [Source compatibility](#source-compatibility)
 * [Effect on ABI stability](#effect-on-abi-stability)
 * [Effect on API resilience](#effect-on-api-resilience)
@@ -656,12 +650,6 @@ is equivalent to
 func map<T, E: Error>(_ transform: (Element) throws(E) -> T) rethrows -> [T]
 ```
 
-#### Throwing in asynchronous `for..in` loops
-
-The asynchronous `for..in` loop uses an underspecified notion of ["rethrowing" protocol conformances](https://github.com/apple/swift-evolution/blob/main/proposals/0298-asyncsequence.md#rethrows) to make it possible for iteration over an asynchronous sequence to be throwing when the sequence's `next()` operation may throw, and non-throwing otherwise. With typed throws, the `AsyncSequence` protocol will gain an associated type `Failure` that provides the thrown error type for the iterator's `next()` operation (see details in the section *Standard library adoption*).
-
-When a `for..in` loop iterators over an `AsyncSequence`, the iteration can throw the `Failure` type of the `AsyncSequence`. When the `Failure` type is `Never`, the loop cannot throw and does not require `try`. This provides a mechanism for handling throwing and non-throwing asynchronous `for..in` loops consistently.
-
 #### `async let`
 
 An `async let` initializer can throw an error, and that error is effectively rethrown at any point where one of the variables defined in the `async let` is referenced. For example:
@@ -867,11 +855,7 @@ func map<T, E>(body: (Element) throws(E) -> T) throws(E) { ... }
 
 the function has an inferred requirement `E: Error`. 
 
-### Standard library adoption
-
-There are a number of places in the standard library where the adoption of typed throws will help maintain thrown types through user code. This section details those changes to the standard library:
-
-#### Converting between `throws` and `Result`
+### Converting between `throws` and `Result`
 
 `Result`'s [init(catching:)](https://developer.apple.com/documentation/swift/result/3139399-init) operation translates a throwing closure into a `Result` instance. It's currently defined only when the `Failure` type is `any Error`, i.e.,
 
@@ -899,133 +883,6 @@ should use `Failure` as the thrown error type:
 func get() throws(Failure) -> Success
 ```
 
-#### `Task` creation and completion
-
-The [`Task`](https://developer.apple.com/documentation/swift/task) APIs have a `Failure` type similarly to `Result`, but use a pattern of overloading on `Failure == any Error` and `Failure == Never` to handling throwing and non-throwing versions. For example, the `Task` initializer is defined as the following overloaded pair:
-
-```swift
-init(priority: TaskPriority?, operation: () async -> Success) where Failure == Never
-init(priority: TaskPriority?, operation: () async throws -> Success) where Failure == any Error
-```
-
-These two initializers can be replaced with a single initializer using typed throws:
-
-```swift
-init(priority: TaskPriority?, operation: () async throws(Failure) -> Success)
-```
-
-The result is both more expressive (maintaining typed error information) and simpler (because a single initializer suffices). The same transformation can be applied to the `detached` function that creates detached threads, where the two overloads are replaced with the following:
-
-```swift
-@discardableResult
-static func detached(
-    priority: TaskPriority? = nil,
-    operation: @escaping () async throws(Failure) -> Success
-) -> Task<Success, Failure>
-```
-
-Finally, the `value` property of `Task` is similarly overloaded:
-
-```swift
-extension Task where Failure == Never {}
-  var value: Success { get async }
-}
-extension Task where Failure == any Error {
-  var value: Success { get async throws }
-}
-```
-
-These two can be replaced with a single property:
-
-```swift
-var value: Success { get async throws(Failure) }
-```
-
-#### Continuations
-
-The `with(Checked|Unsafe)ThrowingContinuation` operations should incorporate typed throws, e.g.,:
-
-```swift
-public func withCheckedThrowingContinuation<T, Failure: Error>(
-    function: String = #function,
-    _ body: (CheckedContinuation<T, Failure>) -> Void
-) async throws(Failure) -> T
-
-public func withUnsafeThrowingContinuation<T, Failure: Error>(
-  _ fn: (UnsafeContinuation<T, Failure>) -> Void
-) async throws(Failure) -> T
-```
-
-#### Task cancellation
-
-A few of the `Task` APIs are documented to only throw `CancellationError` and can adopt typed throws. For example, `checkCancellation`:
-
-```swift
-public static func checkCancellation() throws(CancellationError)
-```
-
-Similarly, the `sleep` APIs will only throw on cancellation:
-
-```swift
-public static func sleep<C: Clock>(
-  until deadline: C.Instant,
-  tolerance: C.Instant.Duration? = nil,
-  clock: C = ContinuousClock()
-) async throws(CancellationError)
-
-public static func sleep<C: Clock>(
-  for duration: C.Instant.Duration,
-  tolerance: C.Instant.Duration? = nil,
-  clock: C = ContinuousClock()
-) async throws(CancellationError)
-
-```
-
-#### `AsyncIteratorProtocol` associated type
-
-`AsyncSequence` iterators can throw during iteration, as described by the `throws` on the `next()` operation on async iterators:
-
-```swift
-public protocol AsyncIteratorProtocol {
-  associatedtype Element
-  mutating func next() async throws -> Element?
-}
-```
-
-Introduce a new associated type `Failure` into this protocol to use as the thrown error type of `next()`, i.e.,
-
-```swift
-associatedtype Failure: Error = any Error
-mutating func next() async throws(Failure) -> Element?
-```
-
-Then introduce an associated type `Failure` into `AsyncSequence` that provides a more convenient name for this type, i.e.,
-
-```swift
-associatedtype Failure where AsyncIterator.Failure == Failure
-```
-
-With the new `Failure` associated type, async sequences can be composed without losing information about whether (and what kind) of errors they throw.
-
-With the new `Failure` type in place, we can adopt [primary asociated types](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md) for these protocols:
-
-```swift
-public protocol AsyncIteratorProtocol<Element, Failure> {
-  associatedtype Element
-  associatedtype Failure: Error = any Error
-  mutating func next() async throws(Failure) -> Element?
-}
-
-public protocol AsyncSequence<Element, Failure> {
-  associatedtype AsyncIterator: AsyncIteratorProtocol
-  associatedtype Element where AsyncIterator.Element == Element
-  associatedtype Failure where AsyncIterator.Failure == Failure
-  __consuming func makeAsyncIterator() -> AsyncIterator
-}
-```
-
-This allows the use of `AsyncSequence` with both opaque types (`some AsyncSequence<String, any Error>`) and existential types (`any AsyncSequence<Image, NetworkError>`). 
-
 ## Source compatibility
 
 This proposal has called out two specific places where the introduction of typed throws into the language will affect source compatibility. In each place, a minimal source-breaking aspect of the change has been separated out so that it will be enabled only in the next major language version (Swift 6), and Swift 5 has these additional limitations:
@@ -1039,7 +896,7 @@ Note that the source compatibility arguments in this proposal are there to ensur
 
 ## Effect on ABI stability
 
-The ABI between an function with an untyped throws and one that uses typed throws will be different, so that typed throws can benefit from knowing the precise type. For most of the standard library changes, an actual ABI break can be avoided because the implementations can make use of [`@backDeploy`](https://github.com/apple/swift-evolution/blob/main/proposals/0376-function-back-deployment.md). However, the suggested change to `AsyncIteratorProtocol` might not be able to be made in a manner that does not break ABI stability.
+The ABI between an function with an untyped throws and one that uses typed throws will be different, so that typed throws can benefit from knowing the precise type.
 
 ## Effect on API resilience
 
@@ -1116,6 +973,31 @@ public func map<U, E>(
 ```
 
 With some work, this change can be performed in a backward-compatible manner. However, there are a large number of `rethrows` operations in the standard library, so we leave the full update to a separate proposal.
+
+### Concurrency library adoption
+
+The concurrency library has a number of places that could benefit from the adoption of typed throws, including `Task` creation and completion, continuations, task cancellation, task groups, and async sequences and streams. 
+
+`Task` is similar to `Result` because it also carries a `Failure` type that could benefit from typed throws. Continuations and task groups could propagate typed throws information from closures to make more of the library usable with precise thrown type information.
+
+`AsyncSequence`, and the asynchronous `for..in` loop that depends on it, could be improved by using typed throws. Both `AsyncIteratorProtocol` and `AsyncSequence` could be augmented with a `Failure` associated type that is used for the thrown error type of `next()`, and will be used by the asynchronous `for..in` loop to determine whether the sequence can throw. This can be combined with [primary associated types](https://github.com/apple/swift-evolution/blob/main/proposals/0346-light-weight-same-type-syntax.md) to make it possible to use existentials such as `any AsyncSequence<Image, NetworkError>`:
+
+```swift
+public protocol AsyncIteratorProtocol<Element, Failure> {
+  associatedtype Element
+  associatedtype Failure: Error = any Error
+  mutating func next() async throws(Failure) -> Element?
+}
+
+public protocol AsyncSequence<Element, Failure> {
+  associatedtype AsyncIterator: AsyncIteratorProtocol
+  associatedtype Element where AsyncIterator.Element == Element
+  associatedtype Failure where AsyncIterator.Failure == Failure
+  __consuming func makeAsyncIterator() -> AsyncIterator
+}
+```
+
+As with the standard library, the scope of potential changes to the concurrency library to make full use of typed throws is large, and there are likely to be some interesting design questions. Therefore, we leave it to a follow-on proposal, noting only that whatever form `AsyncSequence` takes with typed throws, the language support for asynchronous `for..in` will need to adjust.
 
 ### Specific thrown error types for distributed actors
 
@@ -1287,6 +1169,7 @@ Removing or changing the semantics of `rethrows` would be a source-incompatible 
   * Expand the discussion on allowing all uninhabited error types to mean "non-throwing".
   * Provide a better example for inferring `Error` conformance on generic parameters.
   * Move the replacement of `rethrows` in the standard library with typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
+  * Move the concurrency library changes for typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
