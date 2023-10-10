@@ -1026,24 +1026,6 @@ public protocol AsyncSequence<Element, Failure> {
 
 This allows the use of `AsyncSequence` with both opaque types (`some AsyncSequence<String, any Error>`) and existential types (`any AsyncSequence<Image, NetworkError>`). 
 
-#### Operations that `rethrow`
-
-The standard library contains a large number of operations that `rethrow`. In all cases, the standard library will only throw from a call to one of the closure arguments: it will never substitute a different thrown error type. Therefore, update every `rethrows` function in the standard library to carry the thrown error type from the closure parameter to the result, i.e., the optional `map` operation will be change from:
-
-```swift 
-public func map<U>(
-  _ transform: (Wrapped) throws -> U
-) rethrows -> U?
-```
-
-to
-
-```swift
-public func map<U, E>(
-  _ transform: (Wrapped) throws(E) -> U
-) rethrows(E) -> U?
-```
-
 ## Source compatibility
 
 This proposal has called out two specific places where the introduction of typed throws into the language will affect source compatibility. In each place, a minimal source-breaking aspect of the change has been separated out so that it will be enabled only in the next major language version (Swift 6), and Swift 5 has these additional limitations:
@@ -1114,6 +1096,26 @@ func load(from dataLoader: dataLoader) {
 Here, the `DataLoader.load()` function could be updated to throw `DataLoaderError` and this particular client code would still work, because `DataLoaderError` is convertible to `any Error`. Note that clients could still be broken by this kind of change, for example overrides of an `open` function, declarations that satisfy a protocol requirement, or code that relies on the precide error type (say, by overloading). However, such a change is far less likely to break clients of an API than loosening thrown type informance.
 
 ## Future directions
+
+### Standard library operations that `rethrow`
+
+The standard library contains a large number of operations that `rethrow`. In all cases, the standard library will only throw from a call to one of the closure arguments: it will never substitute a different thrown error type. Therefore, we should considering updating every `rethrows` function in the standard library to carry the thrown error type from the closure parameter to the result, i.e., the optional `map` operation will be change from:
+
+```swift 
+public func map<U>(
+  _ transform: (Wrapped) throws -> U
+) rethrows -> U?
+```
+
+to
+
+```swift
+public func map<U, E>(
+  _ transform: (Wrapped) throws(E) -> U
+) rethrows(E) -> U?
+```
+
+With some work, this change can be performed in a backward-compatible manner. However, there are a large number of `rethrows` operations in the standard library, so we leave the full update to a separate proposal.
 
 ### Specific thrown error types for distributed actors
 
@@ -1284,6 +1286,7 @@ Removing or changing the semantics of `rethrows` would be a source-incompatible 
   * Move the the typed `rethrows` feature out of this proposal, and into Alternatives Considered. Once we gain more experience with typed throws, we can decide what to do with `rethrows`.
   * Expand the discussion on allowing all uninhabited error types to mean "non-throwing".
   * Provide a better example for inferring `Error` conformance on generic parameters.
+  * Move the replacement of `rethrows` in the standard library with typed throws into "Future Directions", because it is large enough that it needs a separate proposal.
 * Revision 2:
   * Add a short section on when to use typed throws
   * Add an Alternatives Considered section for other syntaxes
